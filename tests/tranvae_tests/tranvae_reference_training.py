@@ -18,7 +18,8 @@ tranvae_epochs = 500
 
 early_stopping_kwargs = {
     "early_stopping_metric": "val_accuracy",
-    "threshold": 0.2,
+    "mode": "max",
+    "threshold": 0,
     "patience": 20,
     "reduce_lr": True,
     "lr_patience": 13,
@@ -61,6 +62,7 @@ tranvae.model.load_state_dict(torch.load(
 tranvae.train(
     n_epochs=tranvae_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
+    eta_epoch_anneal=100,
     eta=1000,
     tau=0,
 )

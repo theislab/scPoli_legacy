@@ -62,7 +62,8 @@ class tranVAETrainer(Trainer):
             n_clusters: int = None,
             clustering: str = 'kmeans',
             use_unlabeled_loss: bool = True,
-            eta: float = 1,
+            eta: float = 1000,
+            eta_epoch_anneal: int = None,
             tau: float = 0,
             labeled_indices: list = None,
             **kwargs
@@ -85,6 +86,7 @@ class tranVAETrainer(Trainer):
             self.landmarks_unlabeled = torch.tensor(self.landmarks_unlabeled, device=self.device)
 
         self.eta = eta
+        self.eta_epoch_anneal = eta_epoch_anneal
         self.tau = tau
         if labeled_indices is None:
             self.labeled_indices = range(len(adata))
@@ -96,6 +98,22 @@ class tranVAETrainer(Trainer):
         self.use_unlabeled_loss = use_unlabeled_loss
         self.n_labeled = self.model.n_cell_types
         self.lndmk_optim = None
+
+    def calc_eta_coeff(self):
+        """Calculates current alpha coefficient for alpha annealing.
+
+           Parameters
+           ----------
+
+           Returns
+           -------
+           Current annealed alpha value
+        """
+        if self.alpha_epoch_anneal is not None:
+            eta_coeff = min(self.epoch / self.eta_epoch_anneal, 1)
+        else:
+            eta_coeff = 1
+        return eta_coeff
 
     def update_labeled_indices(self, labeled_indices):
         self.labeled_indices = labeled_indices
@@ -135,7 +153,6 @@ class tranVAETrainer(Trainer):
 
     def loss(self, total_batch=None):
         latent, recon_loss, kl_loss, mmd_loss = self.model(**total_batch)
-        trvae_loss = recon_loss + self.calc_alpha_coeff()*kl_loss + mmd_loss
 
         # Calculate classifier loss for labeled/unlabeled data
         label_categories = total_batch["labeled"].unique().tolist()
@@ -157,9 +174,10 @@ class tranVAETrainer(Trainer):
             )
             landmark_loss = landmark_loss + labeled_loss
 
-        classifier_loss = self.eta * landmark_loss
-
+        classifier_loss = self.calc_eta_coeff() * self.eta * landmark_loss
+        trvae_loss = recon_loss + self.calc_alpha_coeff() * kl_loss + mmd_loss
         loss = trvae_loss + classifier_loss
+
         self.iter_logs["loss"].append(loss.item())
         self.iter_logs["unweighted_loss"].append(
             recon_loss.item() + kl_loss.item() + mmd_loss.item() + landmark_loss.item()

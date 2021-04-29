@@ -19,12 +19,14 @@ surgery_epochs = 500
 
 early_stopping_kwargs = {
     "early_stopping_metric": "val_unweighted_loss",
-    "threshold": 0.2,
+    "mode": "min",
+    "threshold": 0,
     "patience": 20,
     "reduce_lr": True,
     "lr_patience": 13,
     "lr_factor": 0.1,
 }
+
 adata_all = sc.read(os.path.expanduser(f'~/Documents/benchmarking_datasets/pancreas_normalized.h5ad'))
 adata = adata_all.raw.to_adata()
 adata = remove_sparsity(adata)
@@ -60,6 +62,7 @@ new_tranvae = TRANVAE.load_query_data(
 new_tranvae.train(
     n_epochs=surgery_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
+    eta_epoch_anneal=100,
     eta=1000,
     tau=0,
     weight_decay=0
