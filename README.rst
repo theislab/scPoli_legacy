@@ -9,6 +9,7 @@ More to come here...
 Usage and installation
 -------------------------------
 Use pip command in terminal:
+
 .. code-block:: bash
 
    pip install git+https://github.com/theislab/tranvae.git
