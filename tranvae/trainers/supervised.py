@@ -156,15 +156,22 @@ class tranVAETrainer(Trainer):
                 total_batch["celltype"][total_batch['labeled'] == 1],
             )
             landmark_loss = landmark_loss + labeled_loss
+
         classifier_loss = self.eta * landmark_loss
 
         loss = trvae_loss + classifier_loss
-        self.iter_logs["loss"].append(loss)
-        self.iter_logs["unweighted_loss"].append(recon_loss + kl_loss + mmd_loss + landmark_loss)
-        self.iter_logs["trvae_loss"].append(trvae_loss)
-        self.iter_logs["classifier_loss"].append(classifier_loss)
-        self.iter_logs["unlabeled_loss"].append(unlabeled_loss)
-        self.iter_logs["labeled_loss"].append(labeled_loss)
+        self.iter_logs["loss"].append(loss.item())
+        self.iter_logs["unweighted_loss"].append(
+            recon_loss.item() + kl_loss.item() + mmd_loss.item() + landmark_loss.item()
+        )
+        self.iter_logs["trvae_loss"].append(trvae_loss.item())
+        self.iter_logs["classifier_loss"].append(classifier_loss.item())
+        if 0 in label_categories and self.use_unlabeled_loss:
+            self.iter_logs["unlabeled_loss"].append(unlabeled_loss.item())
+        if 1 in label_categories:
+            self.iter_logs["labeled_loss"].append(labeled_loss.item())
+            self.iter_logs["accuracy"].append(labeled_accuracy.item())
+
         return loss
 
     def on_epoch_end(self):

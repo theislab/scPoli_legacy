@@ -17,7 +17,7 @@ cell_type_key = "cell_type"
 tranvae_epochs = 500
 
 early_stopping_kwargs = {
-    "early_stopping_metric": "val_classifier_loss",
+    "early_stopping_metric": "val_accuracy",
     "threshold": 0.2,
     "patience": 20,
     "reduce_lr": True,
