@@ -1,5 +1,3 @@
-|PyPI| |PyPIDownloads| |Docs| |travis|
-
 
 TranVAE - single-cell semi-supervised model for architecture surgery
 =========================================================================
@@ -11,7 +9,9 @@ More to come here...
 Usage and installation
 -------------------------------
 Use pip command in terminal:
-`pip install git+https://github.com/theislab/tranvae.git`
+.. code-block:: language
+
+   pip install git+https://github.com/theislab/tranvae.git
 
 Support and contribute
 -------------------------------
