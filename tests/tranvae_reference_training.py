@@ -1,7 +1,6 @@
 import scanpy as sc
 import torch
 import os
-import scarches as sca
 from scarches.dataset.trvae.data_handling import remove_sparsity
 import matplotlib.pyplot as plt
 from tranvae.model import TRANVAE
