@@ -6,7 +6,9 @@ import numpy as np
 
 from scarches.models.trvae.trvae import trVAE
 from scarches.models.trvae.losses import mse, mmd, zinb, nb
-from scarches.models.trvae._utils import one_hot_encoder, euclidean_dist
+from scarches.models.trvae._utils import one_hot_encoder
+
+from ._utils import euclidean_dist
 
 
 class tranVAE(trVAE):

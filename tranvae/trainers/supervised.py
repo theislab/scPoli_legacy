@@ -5,7 +5,9 @@ import numpy as np
 from sklearn.cluster import KMeans
 from torch.distributions import Normal
 from scarches.trainers.trvae.trainer import Trainer
-from scarches.trainers.trvae._utils import make_dataset,euclidean_dist
+from scarches.trainers.trvae._utils import make_dataset
+
+from ._utils import euclidean_dist, t_dist, target_distribution, kl_loss
 
 
 class tranVAETrainer(Trainer):
@@ -68,8 +70,9 @@ class tranVAETrainer(Trainer):
             labeled_indices: list = None,
             **kwargs
     ):
-        super().__init__(model, adata, **kwargs)
 
+        super().__init__(model, adata, **kwargs)
+        self.loss_metric = "mars"
         self.landmarks_labeled = None
 
         if self.model.landmarks_labeled is not None:
@@ -361,17 +364,24 @@ class tranVAETrainer(Trainer):
         return loss, accuracy
 
     def unlabeled_loss_basic(self, latent, landmarks):
-        dists = euclidean_dist(latent, landmarks)
-        min_dist = torch.min(dists, 1)
+        if self.loss_metric == "mars":
+            dists = euclidean_dist(latent, landmarks)
+            min_dist = torch.min(dists, 1)
 
-        y_hat = min_dist[1]
-        args_uniq = torch.unique(y_hat, sorted=True)
-        args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
+            y_hat = min_dist[1]
+            args_uniq = torch.unique(y_hat, sorted=True)
+            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
 
-        min_dist = min_dist[0]  # get_distances
+            min_dist = min_dist[0]  # get_distances
 
-        loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
-
+            loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
+        else:
+            q = t_dist(latent, landmarks, alpha=1)
+            p = target_distribution(q)
+            loss_val = kl_loss(q, p)
+            y_pred = q.argmax(1)
+            args_uniq = torch.unique(y_pred, sorted=True)
+            args_count = torch.stack([(y_pred == x_u).sum() for x_u in args_uniq])
         return loss_val, args_count
 
     def landmark_unlabeled_loss(self, latent, landmarks, tau):
