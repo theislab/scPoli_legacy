@@ -74,33 +74,33 @@ class tranVAETrainer(Trainer):
         super().__init__(model, adata, **kwargs)
         self.loss_metric = "mars"
         self.landmarks_labeled = None
-
-        if self.model.landmarks_labeled is not None:
-            landmarks_means = []
-            for landmark in self.model.landmarks_labeled:
-                landmarks_means.append(landmark.mean)
-            self.landmarks_labeled = torch.stack(landmarks_means)
-
-        if self.landmarks_labeled is not None:
-            self.landmarks_labeled = self.landmarks_labeled.to(device=self.device)
-
-        self.landmarks_unlabeled = self.model.landmarks_unlabeled
-        if self.landmarks_unlabeled is not None:
-            self.landmarks_unlabeled = torch.tensor(self.landmarks_unlabeled, device=self.device)
-
         self.eta = eta
         self.eta_epoch_anneal = eta_epoch_anneal
         self.tau = tau
-        if labeled_indices is None:
-            self.labeled_indices = range(len(adata))
-        else:
-            self.labeled_indices = labeled_indices
-        self.update_labeled_indices(self.labeled_indices)
         self.clustering = clustering
         self.n_clusters = n_clusters
         self.use_unlabeled_loss = use_unlabeled_loss
         self.n_labeled = self.model.n_cell_types
         self.lndmk_optim = None
+
+        # Set indices for labeled data
+        if labeled_indices is None:
+            self.labeled_indices = range(len(adata))
+        else:
+            self.labeled_indices = labeled_indices
+        self.update_labeled_indices(self.labeled_indices)
+
+        # Parse landmarks from model into right format
+        if self.model.landmarks_labeled is not None:
+            landmarks_means = []
+            for landmark in self.model.landmarks_labeled:
+                landmarks_means.append(landmark.mean)
+            self.landmarks_labeled = torch.stack(landmarks_means)
+        if self.landmarks_labeled is not None:
+            self.landmarks_labeled = self.landmarks_labeled.to(device=self.device)
+        self.landmarks_unlabeled = self.model.landmarks_unlabeled
+        if self.landmarks_unlabeled is not None:
+            self.landmarks_unlabeled = torch.tensor(self.landmarks_unlabeled, device=self.device)
 
     def calc_eta_coeff(self):
         """Calculates current alpha coefficient for alpha annealing.
@@ -162,6 +162,8 @@ class tranVAETrainer(Trainer):
         landmark_loss = torch.tensor(0, device=self.device, requires_grad=False)
         unlabeled_loss = torch.tensor(0, device=self.device, requires_grad=False)
         labeled_loss = torch.tensor(0, device=self.device, requires_grad=False)
+
+        # Calculate landmark loss for unlabeled data
         if 0 in label_categories and self.use_unlabeled_loss:
             unlabeled_loss, _ = self.landmark_unlabeled_loss(
                 latent[total_batch['labeled'] == 0],
@@ -169,6 +171,8 @@ class tranVAETrainer(Trainer):
                 self.tau,
             )
             landmark_loss = landmark_loss + unlabeled_loss
+
+        # Calculate landmark loss for labeled data
         if 1 in label_categories:
             labeled_loss, labeled_accuracy = self.landmark_labeled_loss(
                 latent[total_batch['labeled'] == 1],
@@ -177,10 +181,10 @@ class tranVAETrainer(Trainer):
             )
             landmark_loss = landmark_loss + labeled_loss
 
+        # Loss addition and Logs
         classifier_loss = self.calc_eta_coeff() * self.eta * landmark_loss
         trvae_loss = recon_loss + self.calc_alpha_coeff() * kl_loss + mmd_loss
         loss = trvae_loss + classifier_loss
-
         self.iter_logs["loss"].append(loss.item())
         self.iter_logs["unweighted_loss"].append(
             recon_loss.item() + kl_loss.item() + mmd_loss.item() + landmark_loss.item()
@@ -192,14 +196,15 @@ class tranVAETrainer(Trainer):
         if 1 in label_categories:
             self.iter_logs["labeled_loss"].append(labeled_loss.item())
             self.iter_logs["accuracy"].append(labeled_accuracy.item())
-
         return loss
 
     def on_epoch_end(self):
         self.model.eval()
-        # Update landmark positions
+
         latent = self.get_latent_train()
         label_categories = self.train_data.labeled_vector.unique().tolist()
+
+        # Update unlabeled landmark positions
         if 0 in label_categories:
             for landmk in self.landmarks_unlabeled:
                 landmk.requires_grad = True
@@ -214,6 +219,7 @@ class tranVAETrainer(Trainer):
             for landmk in self.landmarks_unlabeled:
                 landmk.requires_grad = False
 
+        # Update labeled landmark positions
         if 1 in label_categories:
             self.landmarks_labeled = self.update_labeled_landmarks(
                 latent[self.train_data.labeled_vector == 1],
