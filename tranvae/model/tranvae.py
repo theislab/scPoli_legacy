@@ -64,9 +64,10 @@ class tranVAE(trVAE):
             latent = self.get_latent(x,c)
 
         distances = euclidean_dist(latent, self.landmarks_labeled["mean"])
-        _, preds = torch.max(-distances, dim=1)
+        weighted_distances = F.softmax(-distances, dim=1)
+        probs, preds = torch.max(weighted_distances, dim=1)
 
-        return preds, _
+        return preds, probs
 
     def check_for_unseen(self):
         results = self.get_prob_matrix()

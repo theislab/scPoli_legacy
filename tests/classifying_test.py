@@ -55,19 +55,21 @@ tranvae = TRANVAE.load(
     adata=adata_in_use
 )
 
-preds, _ = tranvae.classify()
+preds, probs = tranvae.classify()
 print('Distance Classifier:', np.mean(preds == adata_in_use.obs[cell_type_key]))
+print(probs)
 
-#correct_probs = probs[preds == adata_in_use.obs[cell_type_key]]
-#incorrect_probs = probs[preds != adata_in_use.obs[cell_type_key]]
-#data = [correct_probs, incorrect_probs]
-#fig, ax = plt.subplots()
-#ax.set_title('Default violin plot')
-#ax.set_ylabel('Observed values')
-#ax.violinplot(data)
-#labels = ['Correct', 'Incorrect']
-#set_axis_style(ax, labels)
-#plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}/uncertainty.png'), bbox_inches='tight')
+correct_probs = probs[preds == adata_in_use.obs[cell_type_key]]
+incorrect_probs = probs[preds != adata_in_use.obs[cell_type_key]]
+data = [correct_probs, incorrect_probs]
+fig, ax = plt.subplots()
+ax.set_title('Default violin plot')
+ax.set_ylabel('Observed values')
+ax.violinplot(data)
+labels = ['Correct', 'Incorrect']
+set_axis_style(ax, labels)
+plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}/uncertainty.png'), bbox_inches='tight')
+exit()
 
 x,y,c,p = tranvae.get_landmarks_info()
 print(p)
