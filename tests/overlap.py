@@ -2,16 +2,6 @@ import torch
 import numpy as np
 
 
-test_data = np.random.random((100,5))
-test_data = torch.tensor(test_data)
-test_mean = test_data.mean(0).unsqueeze(0)
-test_var = torch.pow(test_data.std(0), 2)
-
-print(test_mean)
-print(test_var)
-exit()
-
-
 def get_overlap(cluster_1, cluster_2):
     '''
     Calculate maximal percentage overlap of two N dimensional squares approximated by line intervals in each dimension.

@@ -65,16 +65,17 @@ new_tranvae.train(
     eta_epoch_anneal=100,
     eta=1000,
     tau=0,
-    weight_decay=0
+    weight_decay=0,
 )
 
 query_latent = sc.AnnData(new_tranvae.get_latent())
 query_latent.obs['celltype'] = target_adata.obs[cell_type_key].tolist()
 query_latent.obs['batch'] = target_adata.obs[condition_key].tolist()
-preds_dist, _ = new_tranvae.classify(version='dist')
-preds_prob, _ = new_tranvae.classify(version='prob')
+pred_names, probs = new_tranvae.check_for_unseen()
+print(pred_names)
+print(probs)
+preds_dist, _ = new_tranvae.classify()
 print('Distance Classifier:', np.mean(preds_dist == target_adata.obs[cell_type_key]))
-print('Probability Classifier:', np.mean(preds_prob == target_adata.obs[cell_type_key]))
 
 sc.pp.neighbors(query_latent)
 sc.tl.leiden(query_latent)

@@ -8,7 +8,7 @@ from scarches.models.trvae.trvae import trVAE
 from scarches.models.trvae.losses import mse, mmd, zinb, nb
 from scarches.models.trvae._utils import one_hot_encoder
 
-from ._utils import euclidean_dist
+from ._utils import euclidean_dist, get_overlap
 
 
 class tranVAE(trVAE):
@@ -16,68 +16,60 @@ class tranVAE(trVAE):
                  input_dim: int,
                  conditions: list,
                  cell_types: list,
-                 landmarks_labeled: Optional[list] = None,
-                 landmarks_normalize: Optional[np.ndarray] = None,
-                 landmarks_unlabeled: Optional[np.ndarray] = None,
+                 landmarks_labeled: Optional[dict] = None,
+                 landmarks_unlabeled: Optional[dict] = None,
                  **trvae_kwargs,
                  ):
         super().__init__(
             input_dim,
             conditions,
             **trvae_kwargs)
+
         self.n_cell_types = len(cell_types)
         self.cell_types = cell_types
         self.cell_type_encoder = {k: v for k, v in zip(cell_types, range(len(cell_types)))}
-        self.landmarks_labeled = landmarks_labeled
-        self.landmarks_normalize = landmarks_normalize
-        self.landmarks_unlabeled = landmarks_unlabeled
+        self.landmarks_labeled = {"mean": None, "var": None} if landmarks_labeled is None else landmarks_labeled
+        self.landmarks_unlabeled = {"mean": None, "var": None} if landmarks_unlabeled is None else landmarks_unlabeled
         self.new_landmarks = None
 
-        if landmarks_labeled is not None:
+        if self.landmarks_labeled["mean"] is not None:
             # Save indices of possible new landmarks to train
             self.new_landmarks = []
-            for idx in range(self.n_cell_types - len(landmarks_labeled)):
-                self.new_landmarks.append(len(landmarks_labeled) + idx)
+            for idx in range(self.n_cell_types - len(self.landmarks_labeled["mean"])):
+                self.new_landmarks.append(len(self.landmarks_labeled["mean"]) + idx)
 
-        if landmarks_normalize is not None:
-            self.landmarks_normalize = torch.tensor(self.landmarks_normalize)
-
-        if landmarks_unlabeled is not None:
-            self.landmarks_unlabeled = torch.tensor(self.landmarks_unlabeled)
-
-    def get_prob_matrix(self, data):
-        # Returns (N-batch x N-cell-types)-matrix with probabilities
+    def get_prob_matrix(self):
+        # Returns (N-unlabeled-Landmarks x N-cell-types)-matrix with probabilities
         results = []
-        for idx, landmark in enumerate(self.landmarks_labeled):
-            unn_probs = landmark.log_prob(data.cpu()).exp()
-            result = unn_probs / self.landmarks_normalize[idx].cpu()
-            result = torch.mean(result, dim=1)
-            results.append(result)
-        results = torch.stack(results).transpose(0, 1)
+        for idx in range(len(self.landmarks_unlabeled["mean"])):
+            unlabeled_result = []
+            unlabeled_landmark_interval = torch.stack(
+                (self.landmarks_unlabeled["mean"][idx,:] - self.landmarks_unlabeled["var"][idx,:],
+                 self.landmarks_unlabeled["mean"][idx,:] + self.landmarks_unlabeled["var"][idx,:])
+            )
+            for cell_type in range(len(self.landmarks_labeled["mean"])):
+                labeled_landmark_interval = torch.stack(
+                    (self.landmarks_labeled["mean"][cell_type,:] - self.landmarks_labeled["var"][cell_type,:],
+                     self.landmarks_labeled["mean"][cell_type,:] + self.landmarks_labeled["var"][cell_type,:])
+                )
+                prob = get_overlap(unlabeled_landmark_interval, labeled_landmark_interval)
+                unlabeled_result.append(prob)
+            results.append(unlabeled_result)
+        return torch.tensor(results, device=self.landmarks_unlabeled["mean"].device)
 
-        return results
-
-    def classify(self, x, c=None, landmark=False, version='prob'):
+    def classify(self, x, c=None, landmark=False):
         if landmark:
             latent = x
         else:
             latent = self.get_latent(x,c)
 
-        if version == 'prob':
-            results = self.get_prob_matrix(latent)
-            probs, preds = torch.max(results, dim=1)
-        elif version == 'dist':
-            landmarks_means = []
-            for landmark in self.landmarks_labeled:
-                landmarks_means.append(landmark.mean)
-            landmarks_labeled_mean = torch.stack(landmarks_means)
-            landmarks_labeled_mean = landmarks_labeled_mean.to(latent.device)
-            distances = euclidean_dist(latent, landmarks_labeled_mean)
-            probs, preds = torch.max(-distances, dim=1)
-        return preds, probs
+        distances = euclidean_dist(latent, self.landmarks_labeled["mean"])
+        _, preds = torch.max(-distances, dim=1)
+
+        return preds, _
 
     def check_for_unseen(self):
-        results = self.get_prob_matrix(self.landmarks_unlabeled)
+        results = self.get_prob_matrix()
         probs, preds = torch.max(results, dim=1)
         return preds, probs
 

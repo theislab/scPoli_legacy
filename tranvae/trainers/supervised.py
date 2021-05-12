@@ -84,6 +84,8 @@ class tranVAETrainer(Trainer):
 
         self.landmarks_labeled = None
         self.landmarks_labeled_var = None
+        self.landmarks_unlabeled = None
+        self.landmarks_unlabeled_var = None
         self.n_labeled = self.model.n_cell_types
         self.lndmk_optim = None
 
@@ -95,18 +97,12 @@ class tranVAETrainer(Trainer):
         self.update_labeled_indices(self.labeled_indices)
 
         # Parse landmarks from model into right format
-        if self.model.landmarks_labeled is not None:
+        if self.model.landmarks_labeled["mean"] is not None:
             self.landmarks_labeled = self.model.landmarks_labeled["mean"]
             self.landmarks_labeled_var = self.model.landmarks_labeled["var"]
         if self.landmarks_labeled is not None:
             self.landmarks_labeled = self.landmarks_labeled.to(device=self.device)
             self.landmarks_labeled_var = self.landmarks_labeled_var.to(device=self.device)
-
-        self.landmarks_unlabeled = self.model.landmarks_unlabeled["mean"]
-        self.landmarks_unlabeled_var = self.model.landmarks_unlabeled["var"]
-        if self.landmarks_unlabeled is not None:
-            self.landmarks_unlabeled = torch.tensor(self.landmarks_unlabeled, device=self.device)
-            self.landmarks_unlabeled_var = torch.tensor(self.landmarks_unlabeled_var, device=self.device)
 
     def calc_eta_coeff(self):
         """Calculates current alpha coefficient for alpha annealing.
@@ -230,6 +226,7 @@ class tranVAETrainer(Trainer):
                 latent[self.train_data.labeled_vector == 0],
                 torch.stack(self.landmarks_unlabeled).squeeze(),
                 self.tau,
+                True
             )
             update_loss.backward()
             self.lndmk_optim.step()
@@ -241,19 +238,15 @@ class tranVAETrainer(Trainer):
         super().on_epoch_end()
 
     def after_loop(self):
-        latent = self.get_latent_train()
-        landmarks_distr, landmarks_normalize = self.update_landmark_distr(
-            latent[self.train_data.labeled_vector == 1],
-            self.train_data.cell_types[self.train_data.labeled_vector == 1],
-            self.model.new_landmarks
-        )
-        self.model.landmarks_labeled = landmarks_distr
-        self.model.landmarks_normalize = landmarks_normalize
+        self.model.landmarks_labeled["mean"] = self.landmarks_labeled
+        self.model.landmarks_labeled["var"] = self.landmarks_labeled_var
 
         if 0 in self.train_data.labeled_vector.unique().tolist():
-            self.model.landmarks_unlabeled = torch.stack(self.landmarks_unlabeled).squeeze()
+            self.model.landmarks_unlabeled["mean"] = torch.stack(self.landmarks_unlabeled).squeeze()
+            self.model.landmarks_unlabeled["var"] = self.landmarks_unlabeled_var
         else:
-            self.model.landmarks_unlabeled = self.landmarks_unlabeled
+            self.model.landmarks_unlabeled["mean"] = self.landmarks_unlabeled
+            self.model.landmarks_unlabeled["var"] = self.landmarks_unlabeled_var
 
     def initialize_landmarks(self):
         # Compute Latent of whole train data
@@ -283,9 +276,7 @@ class tranVAETrainer(Trainer):
 
         # Init unlabeled Landmarks if unlabeled data existent
         if 0 in self.train_data.labeled_vector.unique().tolist():
-            # Full latent here (also labeled data), maybe change back to only unlabeled
-            # lat_array = latent[self.train_data.labeled_vector == 0].cpu().detach().numpy()
-            lat_array = latent.cpu().detach().numpy()
+            lat_array = latent[self.train_data.labeled_vector == 0].cpu().detach().numpy()
 
             if self.clustering == 'kmeans' and self.n_clusters is not None:
                 print(f'Initializing unlabeled landmarks with KMeans-Clustering with a given number of'
@@ -305,19 +296,19 @@ class tranVAETrainer(Trainer):
                     [self.landmarks_unlabeled[i].copy_(k_means_lndmk[i, :]) for i in range(k_means_lndmk.shape[0])]
             else:
                 if self.clustering == 'kmeans' and self.n_clusters is None:
-                    print(f'Initializing unlabeled landmarks with Louvain-Clustering because no value for the'
+                    print(f'Initializing unlabeled landmarks with Leiden-Clustering because no value for the'
                           f'number of clusters was given.')
                 else:
-                    print(f'Initializing unlabeled landmarks with Louvain-Clustering with an unknown number of '
+                    print(f'Initializing unlabeled landmarks with Leiden-Clustering with an unknown number of '
                           f'clusters.')
                 lat_adata = sc.AnnData(lat_array)
                 sc.pp.neighbors(lat_adata)
-                sc.tl.louvain(lat_adata)
+                sc.tl.leiden(lat_adata)
 
                 # Taken from DESC model
                 features = pd.DataFrame(lat_adata.X, index=np.arange(0, lat_adata.shape[0]))
                 Group = pd.Series(
-                    np.asarray(lat_adata.obs['louvain'],dtype=int),
+                    np.asarray(lat_adata.obs['leiden'],dtype=int),
                     index=np.arange(0, lat_adata.shape[0]),
                     name="Group"
                 )
@@ -325,8 +316,8 @@ class tranVAETrainer(Trainer):
                 cluster_centers = np.asarray(Mergefeature.groupby("Group").mean())
 
                 self.n_clusters = cluster_centers.shape[0]
-                print(f'Louvain Clustering succesful. Found {self.n_clusters} clusters.')
-                louvain_lndmk = torch.tensor(cluster_centers, device=self.device)
+                print(f'Leiden Clustering succesful. Found {self.n_clusters} clusters.')
+                leiden_lndmk = torch.tensor(cluster_centers, device=self.device)
 
                 self.landmarks_unlabeled = [
                     torch.zeros(
@@ -337,7 +328,7 @@ class tranVAETrainer(Trainer):
                 ]
 
                 with torch.no_grad():
-                    [self.landmarks_unlabeled[i].copy_(louvain_lndmk[i, :]) for i in range(louvain_lndmk.shape[0])]
+                    [self.landmarks_unlabeled[i].copy_(leiden_lndmk[i, :]) for i in range(leiden_lndmk.shape[0])]
 
     def update_labeled_landmarks(self, latent, labels, previous_landmarks, previous_landmarks_var, tau, mask=None):
         with torch.no_grad():
@@ -388,7 +379,7 @@ class tranVAETrainer(Trainer):
 
         return loss, accuracy
 
-    def unlabeled_loss_basic(self, latent, landmarks):
+    def unlabeled_loss_basic(self, latent, landmarks, update_var):
         if self.loss_metric == "mars":
             dists = euclidean_dist(latent, landmarks)
             min_dist = torch.min(dists, 1)
@@ -400,6 +391,11 @@ class tranVAETrainer(Trainer):
             min_dist = min_dist[0]  # get_distances
 
             loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
+            if update_var:
+                self.landmarks_unlabeled_var = torch.stack(
+                    [torch.pow(
+                        (latent - landmarks[idx_class].expand((latent.size(0),latent.size(1)))),
+                        2).mean(0) for idx_class in args_uniq])
         else:
             q = t_dist(latent, landmarks, alpha=1)
             p = target_distribution(q)
@@ -409,8 +405,8 @@ class tranVAETrainer(Trainer):
             args_count = torch.stack([(y_pred == x_u).sum() for x_u in args_uniq])
         return loss_val, args_count
 
-    def landmark_unlabeled_loss(self, latent, landmarks, tau):
-        loss_val_test, args_count = self.unlabeled_loss_basic(latent, landmarks)
+    def landmark_unlabeled_loss(self, latent, landmarks, tau, update_var=False):
+        loss_val_test, args_count = self.unlabeled_loss_basic(latent, landmarks, update_var)
         if tau > 0:
             dists = euclidean_dist(landmarks, landmarks)
             nproto = landmarks.shape[0]
@@ -419,21 +415,3 @@ class tranVAETrainer(Trainer):
             loss_val_test += tau * loss_val2
 
         return loss_val_test, args_count
-
-    def update_landmark_distr(self, latent, labels,  mask=None):
-        landmarks = []
-        landmarks_normalize = []
-        for idx,landmark in enumerate(self.landmarks_labeled):
-            if (mask is None or idx in mask) and 1 in self.train_data.labeled_vector.unique().tolist():
-                ct_latent = latent[labels == idx]
-                ct_std = torch.std(ct_latent, dim=0)
-                ct_distr = Normal(landmark.cpu(), ct_std.cpu())
-                landmarks.append(ct_distr)
-                landmarks_normalize.append(torch.mean(ct_distr.log_prob(landmark.cpu()).exp(), axis=0))
-            else:
-                ct_distr = self.model.landmarks_labeled[idx]
-                landmarks.append(ct_distr)
-                landmarks_normalize.append(torch.mean(ct_distr.log_prob(landmark.cpu()).exp(), axis=0))
-        landmarks_normalize = torch.stack(landmarks_normalize)
-
-        return landmarks, landmarks_normalize

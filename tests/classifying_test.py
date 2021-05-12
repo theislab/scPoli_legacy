@@ -1,7 +1,7 @@
 import scanpy as sc
 import torch
 import os
-import scarches as sca
+from tranvae.model import TRANVAE
 from scarches.dataset.trvae.data_handling import remove_sparsity
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +20,7 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
-test_nr = 5
+test_nr = 3
 condition_key = "study"
 cell_type_key = "cell_type"
 
@@ -47,30 +47,27 @@ source_adata = adata[adata.obs.study.isin(reference)].copy()
 target_adata = adata[adata.obs.study.isin(query)].copy()
 
 adata_in_use = adata
-experiment = 'pancreas_semi'
-model_in_use = 'reference_model'
+experiment = 'pancreas_surg'
+model_in_use = 'surg_model'
 
-tranvae = sca.models.TRANVAE.load(
+tranvae = TRANVAE.load(
     dir_path=os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}/{model_in_use}'),
     adata=adata_in_use
 )
 
-preds, probs = tranvae.classify(version='dist')
+preds, _ = tranvae.classify()
 print('Distance Classifier:', np.mean(preds == adata_in_use.obs[cell_type_key]))
-preds, probs = tranvae.classify()
-print('Probability Classifier:', np.mean(preds == adata_in_use.obs[cell_type_key]))
-correct_probs = probs[preds == adata_in_use.obs[cell_type_key]]
-incorrect_probs = probs[preds != adata_in_use.obs[cell_type_key]]
-data = [correct_probs, incorrect_probs]
 
-
-fig, ax = plt.subplots()
-ax.set_title('Default violin plot')
-ax.set_ylabel('Observed values')
-ax.violinplot(data)
-labels = ['Correct', 'Incorrect']
-set_axis_style(ax, labels)
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}/uncertainty.png'), bbox_inches='tight')
+#correct_probs = probs[preds == adata_in_use.obs[cell_type_key]]
+#incorrect_probs = probs[preds != adata_in_use.obs[cell_type_key]]
+#data = [correct_probs, incorrect_probs]
+#fig, ax = plt.subplots()
+#ax.set_title('Default violin plot')
+#ax.set_ylabel('Observed values')
+#ax.violinplot(data)
+#labels = ['Correct', 'Incorrect']
+#set_axis_style(ax, labels)
+#plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}/uncertainty.png'), bbox_inches='tight')
 
 x,y,c,p = tranvae.get_landmarks_info()
 print(p)
