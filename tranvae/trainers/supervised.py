@@ -7,56 +7,58 @@ from torch.distributions import Normal
 from scarches.trainers.trvae.trainer import Trainer
 from scarches.trainers.trvae._utils import make_dataset
 
-from ._utils import euclidean_dist, t_dist, target_distribution, kl_loss
+from ._utils import euclidean_dist, t_dist, target_distribution, kl_loss, get_overlap
 
 
 class tranVAETrainer(Trainer):
-    """ScArches Unsupervised Trainer class. This class contains the implementation of the unsupervised CVAE/TRVAE
-       Trainer.
+    """
+    ScArches Unsupervised Trainer class. This class contains the implementation of the unsupervised CVAE/TRVAE
+    Trainer.
 
-           Parameters
-           ----------
-           model: trVAE
-                Number of input features (i.e. gene in case of scRNA-seq).
-           adata: : `~anndata.AnnData`
-                Annotated data matrix.
-           condition_key: String
-                column name of conditions in `adata.obs` data frame.           cell_type_key: String
-                column name of celltypes in `adata.obs` data frame.
-           train_frac: Float
-                Defines the fraction of data that is used for training and data that is used for validation.
-           batch_size: Integer
-                Defines the batch size that is used during each Iteration
-           n_samples: Integer or None
-                Defines how many samples are being used during each epoch. This should only be used if hardware resources
-                are limited.
-           clip_value: Float
-                If the value is greater than 0, all gradients with an higher value will be clipped during training.
-           weight decay: Float
-                Defines the scaling factor for weight decay in the Adam optimizer.
-           alpha_iter_anneal: Integer or None
-                If not 'None', the KL Loss scaling factor will be annealed from 0 to 1 every iteration until the input
-                integer is reached.
-           alpha_epoch_anneal: Integer or None
-                If not 'None', the KL Loss scaling factor will be annealed from 0 to 1 every epoch until the input
-                integer is reached.
-           use_early_stopping: Boolean
-                If 'True' the EarlyStopping class is being used for training to prevent overfitting.
-           early_stopping_kwargs: Dict
-                Passes custom Earlystopping parameters.
-           use_stratified_sampling: Boolean
-                If 'True', the sampler tries to load equally distributed batches concerning the conditions in every
-                iteration.
-           use_stratified_split: Boolean
-                If `True`, the train and validation data will be constructed in such a way that both have same distribution
-                of conditions in the data.
-           monitor: Boolean
-                If `True', the progress of the training will be printed after each epoch.
-           n_workers: Integer
-                Passes the 'n_workers' parameter for the torch.utils.data.DataLoader class.
-           seed: Integer
-                Define a specific random seed to get reproducable results.
-        """
+    Parameters
+    ----------
+    model: trVAE
+        Number of input features (i.e. gene in case of scRNA-seq).
+    adata: : `~anndata.AnnData`
+        Annotated data matrix.
+    condition_key: String
+        column name of conditions in `adata.obs` data frame.
+    cell_type_key: String
+        column name of celltypes in `adata.obs` data frame.
+    train_frac: Float
+        Defines the fraction of data that is used for training and data that is used for validation.
+    batch_size: Integer
+        Defines the batch size that is used during each Iteration
+    n_samples: Integer or None
+        Defines how many samples are being used during each epoch. This should only be used if hardware resources
+        are limited.
+    clip_value: Float
+        If the value is greater than 0, all gradients with an higher value will be clipped during training.
+    weight decay: Float
+        Defines the scaling factor for weight decay in the Adam optimizer.
+    alpha_iter_anneal: Integer or None
+        If not 'None', the KL Loss scaling factor will be annealed from 0 to 1 every iteration until the input
+        integer is reached.
+    alpha_epoch_anneal: Integer or None
+        If not 'None', the KL Loss scaling factor will be annealed from 0 to 1 every epoch until the input
+        integer is reached.
+    use_early_stopping: Boolean
+        If 'True' the EarlyStopping class is being used for training to prevent overfitting.
+    early_stopping_kwargs: Dict
+        Passes custom Earlystopping parameters.
+    use_stratified_sampling: Boolean
+        If 'True', the sampler tries to load equally distributed batches concerning the conditions in every
+        iteration.
+    use_stratified_split: Boolean
+        If `True`, the train and validation data will be constructed in such a way that both have same distribution
+        of conditions in the data.
+    monitor: Boolean
+        If `True', the progress of the training will be printed after each epoch.
+    n_workers: Integer
+        Passes the 'n_workers' parameter for the torch.utils.data.DataLoader class.
+    seed: Integer
+        Define a specific random seed to get reproducable results.
+    """
     def __init__(
             self,
             model,
@@ -73,13 +75,15 @@ class tranVAETrainer(Trainer):
 
         super().__init__(model, adata, **kwargs)
         self.loss_metric = "mars"
-        self.landmarks_labeled = None
         self.eta = eta
         self.eta_epoch_anneal = eta_epoch_anneal
         self.tau = tau
         self.clustering = clustering
         self.n_clusters = n_clusters
         self.use_unlabeled_loss = use_unlabeled_loss
+
+        self.landmarks_labeled = None
+        self.landmarks_labeled_var = None
         self.n_labeled = self.model.n_cell_types
         self.lndmk_optim = None
 
@@ -92,15 +96,17 @@ class tranVAETrainer(Trainer):
 
         # Parse landmarks from model into right format
         if self.model.landmarks_labeled is not None:
-            landmarks_means = []
-            for landmark in self.model.landmarks_labeled:
-                landmarks_means.append(landmark.mean)
-            self.landmarks_labeled = torch.stack(landmarks_means)
+            self.landmarks_labeled = self.model.landmarks_labeled["mean"]
+            self.landmarks_labeled_var = self.model.landmarks_labeled["var"]
         if self.landmarks_labeled is not None:
             self.landmarks_labeled = self.landmarks_labeled.to(device=self.device)
-        self.landmarks_unlabeled = self.model.landmarks_unlabeled
+            self.landmarks_labeled_var = self.landmarks_labeled_var.to(device=self.device)
+
+        self.landmarks_unlabeled = self.model.landmarks_unlabeled["mean"]
+        self.landmarks_unlabeled_var = self.model.landmarks_unlabeled["var"]
         if self.landmarks_unlabeled is not None:
             self.landmarks_unlabeled = torch.tensor(self.landmarks_unlabeled, device=self.device)
+            self.landmarks_unlabeled_var = torch.tensor(self.landmarks_unlabeled_var, device=self.device)
 
     def calc_eta_coeff(self):
         """Calculates current alpha coefficient for alpha annealing.
@@ -204,6 +210,17 @@ class tranVAETrainer(Trainer):
         latent = self.get_latent_train()
         label_categories = self.train_data.labeled_vector.unique().tolist()
 
+        # Update labeled landmark positions
+        if 1 in label_categories:
+            self.landmarks_labeled, self.landmarks_labeled_var = self.update_labeled_landmarks(
+                latent[self.train_data.labeled_vector == 1],
+                self.train_data.cell_types[self.train_data.labeled_vector == 1],
+                self.landmarks_labeled,
+                self.landmarks_labeled_var,
+                self.tau,
+                self.model.new_landmarks
+            )
+
         # Update unlabeled landmark positions
         if 0 in label_categories:
             for landmk in self.landmarks_unlabeled:
@@ -219,15 +236,6 @@ class tranVAETrainer(Trainer):
             for landmk in self.landmarks_unlabeled:
                 landmk.requires_grad = False
 
-        # Update labeled landmark positions
-        if 1 in label_categories:
-            self.landmarks_labeled = self.update_labeled_landmarks(
-                latent[self.train_data.labeled_vector == 1],
-                self.train_data.cell_types[self.train_data.labeled_vector == 1],
-                self.landmarks_labeled,
-                self.tau,
-                self.model.new_landmarks
-            )
         self.model.train()
 
         super().on_epoch_end()
@@ -261,11 +269,14 @@ class tranVAETrainer(Trainer):
                         for value in self.model.new_landmarks:
                             indices = labeled_cell_types.eq(value).nonzero()
                             landmark = labeled_latent[indices].mean(0)
+                            landmark_var = torch.pow(labeled_latent[indices].std(0), 2)
                             self.landmarks_labeled = torch.cat([self.landmarks_labeled, landmark])
+                            self.landmarks_labeled_var = torch.cat([self.landmarks_labeled_var, landmark_var])
             else:
-                self.landmarks_labeled = self.update_labeled_landmarks(
+                self.landmarks_labeled, self.landmarks_labeled_var = self.update_labeled_landmarks(
                     latent[self.train_data.labeled_vector == 1],
                     self.train_data.cell_types[self.train_data.labeled_vector == 1],
+                    None,
                     None,
                     self.tau
                 )
@@ -328,29 +339,37 @@ class tranVAETrainer(Trainer):
                 with torch.no_grad():
                     [self.landmarks_unlabeled[i].copy_(louvain_lndmk[i, :]) for i in range(louvain_lndmk.shape[0])]
 
-    def update_labeled_landmarks(self, latent, labels, previous_landmarks, tau, mask=None):
+    def update_labeled_landmarks(self, latent, labels, previous_landmarks, previous_landmarks_var, tau, mask=None):
         with torch.no_grad():
             unique_labels = torch.unique(labels, sorted=True)
             landmarks_mean = None
+            landmarks_var = None
             for value in range(self.n_labeled):
                 if (mask is None or value in mask) and value in unique_labels:
                     indices = labels.eq(value).nonzero(as_tuple=False)
                     landmark = latent[indices].mean(0)
-                    landmarks_mean = torch.cat([landmarks_mean, landmark]) if landmarks_mean is not None else landmark
+                    landmark_var = torch.pow(latent[indices].std(0), 2)
+                    landmarks_mean = torch.cat(
+                        [landmarks_mean, landmark]) if landmarks_mean is not None else landmark
+                    landmarks_var = torch.cat(
+                        [landmarks_var, landmark_var]) if landmarks_var is not None else landmark_var
                 else:
                     landmark = previous_landmarks[value].unsqueeze(0)
-                    landmarks_mean = torch.cat([landmarks_mean, landmark]) if landmarks_mean is not None else landmark
+                    landmark_var = previous_landmarks_var[value].unsqueeze(0)
+                    landmarks_mean = torch.cat(
+                        [landmarks_mean, landmark]) if landmarks_mean is not None else landmark
+                    landmarks_var = torch.cat(
+                        [landmarks_var, landmark_var]) if landmarks_var is not None else landmark_var
 
             if previous_landmarks is None or tau == 0:
-                return landmarks_mean
-
+                return landmarks_mean, landmarks_var
             previous_landmarks_sum = previous_landmarks.sum(0)
             n_landmarks = previous_landmarks.shape[0]
             landmarks_distance_partial = (tau / (n_landmarks - 1)) * torch.stack(
                 [previous_landmarks_sum - landmark for landmark in previous_landmarks])
             landmarks = (1 / (1 - tau)) * (landmarks_mean - landmarks_distance_partial)
 
-        return landmarks
+        return landmarks, landmarks_var
 
     def landmark_labeled_loss(self, latent, landmarks, labels):
         n_samples = latent.shape[0]
