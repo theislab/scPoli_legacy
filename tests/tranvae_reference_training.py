@@ -63,7 +63,6 @@ tranvae.train(
     early_stopping_kwargs=early_stopping_kwargs,
     eta_epoch_anneal=100,
     eta=1000,
-    tau=0,
 )
 ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/pancreas_surg/reference_model')
 tranvae.save(ref_path, overwrite=True)

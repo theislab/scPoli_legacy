@@ -68,7 +68,6 @@ class tranVAETrainer(Trainer):
             use_unlabeled_loss: bool = True,
             eta: float = 1000,
             eta_epoch_anneal: int = None,
-            tau: float = 0,
             labeled_indices: list = None,
             **kwargs
     ):
@@ -77,7 +76,6 @@ class tranVAETrainer(Trainer):
         self.loss_metric = "mars"
         self.eta = eta
         self.eta_epoch_anneal = eta_epoch_anneal
-        self.tau = tau
         self.clustering = clustering
         self.n_clusters = n_clusters
         self.use_unlabeled_loss = use_unlabeled_loss
@@ -170,7 +168,6 @@ class tranVAETrainer(Trainer):
             unlabeled_loss, _ = self.landmark_unlabeled_loss(
                 latent[total_batch['labeled'] == 0],
                 torch.stack(self.landmarks_unlabeled).squeeze(),
-                self.tau,
             )
             landmark_loss = landmark_loss + unlabeled_loss
 
@@ -213,7 +210,6 @@ class tranVAETrainer(Trainer):
                 self.train_data.cell_types[self.train_data.labeled_vector == 1],
                 self.landmarks_labeled,
                 self.landmarks_labeled_var,
-                self.tau,
                 self.model.new_landmarks
             )
 
@@ -225,7 +221,6 @@ class tranVAETrainer(Trainer):
             update_loss, args_count = self.landmark_unlabeled_loss(
                 latent[self.train_data.labeled_vector == 0],
                 torch.stack(self.landmarks_unlabeled).squeeze(),
-                self.tau,
                 update_var=True,
                 update_pos=True,
             )
@@ -272,7 +267,6 @@ class tranVAETrainer(Trainer):
                     self.train_data.cell_types[self.train_data.labeled_vector == 1],
                     None,
                     None,
-                    self.tau
                 )
 
         # Init unlabeled Landmarks if unlabeled data existent
@@ -331,7 +325,7 @@ class tranVAETrainer(Trainer):
                 with torch.no_grad():
                     [self.landmarks_unlabeled[i].copy_(leiden_lndmk[i, :]) for i in range(leiden_lndmk.shape[0])]
 
-    def update_labeled_landmarks(self, latent, labels, previous_landmarks, previous_landmarks_var, tau, mask=None):
+    def update_labeled_landmarks(self, latent, labels, previous_landmarks, previous_landmarks_var, mask=None):
         with torch.no_grad():
             unique_labels = torch.unique(labels, sorted=True)
             landmarks_mean = None
@@ -352,16 +346,7 @@ class tranVAETrainer(Trainer):
                         [landmarks_mean, landmark]) if landmarks_mean is not None else landmark
                     landmarks_var = torch.cat(
                         [landmarks_var, landmark_var]) if landmarks_var is not None else landmark_var
-
-            if previous_landmarks is None or tau == 0:
-                return landmarks_mean, landmarks_var
-            previous_landmarks_sum = previous_landmarks.sum(0)
-            n_landmarks = previous_landmarks.shape[0]
-            landmarks_distance_partial = (tau / (n_landmarks - 1)) * torch.stack(
-                [previous_landmarks_sum - landmark for landmark in previous_landmarks])
-            landmarks = (1 / (1 - tau)) * (landmarks_mean - landmarks_distance_partial)
-
-        return landmarks, landmarks_var
+        return landmarks_mean, landmarks_var
 
     def landmark_labeled_loss(self, latent, landmarks, labels):
         n_samples = latent.shape[0]
@@ -380,7 +365,7 @@ class tranVAETrainer(Trainer):
 
         return loss, accuracy
 
-    def unlabeled_loss_basic(self, latent, landmarks, update_var, update_pos):
+    def landmark_unlabeled_loss(self, latent, landmarks, update_var=False, update_pos=False):
         if self.loss_metric == "mars":
             dists = euclidean_dist(latent, landmarks)
             min_dist = torch.min(dists, 1)
@@ -433,14 +418,3 @@ class tranVAETrainer(Trainer):
             args_uniq = torch.unique(y_pred, sorted=True)
             args_count = torch.stack([(y_pred == x_u).sum() for x_u in args_uniq])
         return loss_val, args_count
-
-    def landmark_unlabeled_loss(self, latent, landmarks, tau, update_var=False, update_pos=False):
-        loss_val_test, args_count = self.unlabeled_loss_basic(latent, landmarks, update_var, update_pos)
-        if tau > 0:
-            dists = euclidean_dist(landmarks, landmarks)
-            nproto = landmarks.shape[0]
-            loss_val2 = - torch.sum(dists) / (nproto * nproto - nproto)
-
-            loss_val_test += tau * loss_val2
-
-        return loss_val_test, args_count

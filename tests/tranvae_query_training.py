@@ -64,7 +64,6 @@ new_tranvae.train(
     early_stopping_kwargs=early_stopping_kwargs,
     eta_epoch_anneal=100,
     eta=1000,
-    tau=0,
     weight_decay=0,
 )
 
