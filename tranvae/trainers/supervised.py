@@ -64,8 +64,9 @@ class tranVAETrainer(Trainer):
             model,
             adata,
             n_clusters: int = None,
-            clustering: str = 'kmeans',
+            clustering: str = "kmeans",
             use_unlabeled_loss: bool = True,
+            loss_metric: str = "overlap",
             eta: float = 1000,
             eta_epoch_anneal: int = None,
             labeled_indices: list = None,
@@ -73,7 +74,7 @@ class tranVAETrainer(Trainer):
     ):
 
         super().__init__(model, adata, **kwargs)
-        self.loss_metric = "mars"
+        self.loss_metric = loss_metric
         self.eta = eta
         self.eta_epoch_anneal = eta_epoch_anneal
         self.clustering = clustering
@@ -166,7 +167,7 @@ class tranVAETrainer(Trainer):
         # Calculate landmark loss for unlabeled data
         if 0 in label_categories and self.use_unlabeled_loss:
             unlabeled_loss, _ = self.landmark_unlabeled_loss(
-                latent[total_batch['labeled'] == 0],
+                latent[total_batch["labeled"] == 0],
                 torch.stack(self.landmarks_unlabeled).squeeze(),
             )
             landmark_loss = landmark_loss + unlabeled_loss
@@ -174,9 +175,9 @@ class tranVAETrainer(Trainer):
         # Calculate landmark loss for labeled data
         if 1 in label_categories:
             labeled_loss, labeled_accuracy = self.landmark_labeled_loss(
-                latent[total_batch['labeled'] == 1],
+                latent[total_batch["labeled"] == 1],
                 self.landmarks_labeled,
-                total_batch["celltype"][total_batch['labeled'] == 1],
+                total_batch["celltype"][total_batch["labeled"] == 1],
             )
             landmark_loss = landmark_loss + labeled_loss
 
@@ -273,9 +274,9 @@ class tranVAETrainer(Trainer):
         if 0 in self.train_data.labeled_vector.unique().tolist():
             lat_array = latent[self.train_data.labeled_vector == 0].cpu().detach().numpy()
 
-            if self.clustering == 'kmeans' and self.n_clusters is not None:
-                print(f'Initializing unlabeled landmarks with KMeans-Clustering with a given number of'
-                      f'{self.n_clusters} clusters.')
+            if self.clustering == "kmeans" and self.n_clusters is not None:
+                print(f"Initializing unlabeled landmarks with KMeans-Clustering with a given number of"
+                      f"{self.n_clusters} clusters.")
                 k_means = KMeans(n_clusters=self.n_clusters).fit(lat_array)
                 k_means_lndmk = torch.tensor(k_means.cluster_centers_, device=self.device)
 
@@ -290,12 +291,12 @@ class tranVAETrainer(Trainer):
                 with torch.no_grad():
                     [self.landmarks_unlabeled[i].copy_(k_means_lndmk[i, :]) for i in range(k_means_lndmk.shape[0])]
             else:
-                if self.clustering == 'kmeans' and self.n_clusters is None:
-                    print(f'Initializing unlabeled landmarks with Leiden-Clustering because no value for the'
-                          f'number of clusters was given.')
+                if self.clustering == "kmeans" and self.n_clusters is None:
+                    print(f"Initializing unlabeled landmarks with Leiden-Clustering because no value for the"
+                          f"number of clusters was given.")
                 else:
-                    print(f'Initializing unlabeled landmarks with Leiden-Clustering with an unknown number of '
-                          f'clusters.')
+                    print(f"Initializing unlabeled landmarks with Leiden-Clustering with an unknown number of "
+                          f"clusters.")
                 lat_adata = sc.AnnData(lat_array)
                 sc.pp.neighbors(lat_adata)
                 sc.tl.leiden(lat_adata)
@@ -303,7 +304,7 @@ class tranVAETrainer(Trainer):
                 # Taken from DESC model
                 features = pd.DataFrame(lat_adata.X, index=np.arange(0, lat_adata.shape[0]))
                 Group = pd.Series(
-                    np.asarray(lat_adata.obs['leiden'],dtype=int),
+                    np.asarray(lat_adata.obs["leiden"],dtype=int),
                     index=np.arange(0, lat_adata.shape[0]),
                     name="Group"
                 )
@@ -311,7 +312,7 @@ class tranVAETrainer(Trainer):
                 cluster_centers = np.asarray(Mergefeature.groupby("Group").mean())
 
                 self.n_clusters = cluster_centers.shape[0]
-                print(f'Leiden Clustering succesful. Found {self.n_clusters} clusters.')
+                print(f"Leiden Clustering succesful. Found {self.n_clusters} clusters.")
                 leiden_lndmk = torch.tensor(cluster_centers, device=self.device)
 
                 self.landmarks_unlabeled = [
@@ -380,6 +381,23 @@ class tranVAETrainer(Trainer):
             if update_var:
                 self.landmarks_unlabeled_var = torch.stack(
                     [torch.pow(
+                        (latent - landmarks[idx_class].expand((latent.size(0), latent.size(1)))),
+                        2).mean(0) for idx_class in args_uniq])
+
+        elif self.loss_metric == "overlap":
+            dists = euclidean_dist(latent, landmarks)
+            min_dist = torch.min(dists, 1)
+
+            y_hat = min_dist[1]
+            args_uniq = torch.unique(y_hat, sorted=True)
+            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
+
+            min_dist = min_dist[0]  # get_distances
+
+            loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
+            if update_var:
+                self.landmarks_unlabeled_var = torch.stack(
+                    [torch.pow(
                         (latent - landmarks[idx_class].expand((latent.size(0),latent.size(1)))),
                         2).mean(0) for idx_class in args_uniq])
 
@@ -410,11 +428,16 @@ class tranVAETrainer(Trainer):
 
                 loss_val += l_dists
 
-        else:
+        elif self.loss_metric == "t":
             q = t_dist(latent, landmarks, alpha=1)
             p = target_distribution(q)
             loss_val = kl_loss(q, p)
             y_pred = q.argmax(1)
             args_uniq = torch.unique(y_pred, sorted=True)
             args_count = torch.stack([(y_pred == x_u).sum() for x_u in args_uniq])
+
+        else:
+            assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
+                          f"between 'overlap', 'mars' or 't'!"
+
         return loss_val, args_count
