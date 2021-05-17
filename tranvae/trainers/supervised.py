@@ -66,8 +66,9 @@ class tranVAETrainer(Trainer):
             n_clusters: int = None,
             clustering: str = "kmeans",
             use_unlabeled_loss: bool = True,
-            loss_metric: str = "overlap",
+            loss_metric: str = "dist",
             eta: float = 1000,
+            tau: float = 1,
             eta_epoch_anneal: int = None,
             labeled_indices: list = None,
             **kwargs
@@ -76,6 +77,7 @@ class tranVAETrainer(Trainer):
         super().__init__(model, adata, **kwargs)
         self.loss_metric = loss_metric
         self.eta = eta
+        self.tau = tau
         self.eta_epoch_anneal = eta_epoch_anneal
         self.clustering = clustering
         self.n_clusters = n_clusters
@@ -367,24 +369,7 @@ class tranVAETrainer(Trainer):
         return loss, accuracy
 
     def landmark_unlabeled_loss(self, latent, landmarks, update_var=False, update_pos=False):
-        if self.loss_metric == "mars":
-            dists = euclidean_dist(latent, landmarks)
-            min_dist = torch.min(dists, 1)
-
-            y_hat = min_dist[1]
-            args_uniq = torch.unique(y_hat, sorted=True)
-            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
-
-            min_dist = min_dist[0]  # get_distances
-
-            loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
-            if update_var:
-                self.landmarks_unlabeled_var = torch.stack(
-                    [torch.pow(
-                        (latent - landmarks[idx_class].expand((latent.size(0), latent.size(1)))),
-                        2).mean(0) for idx_class in args_uniq])
-
-        elif self.loss_metric == "overlap":
+        if self.loss_metric == "dist":
             dists = euclidean_dist(latent, landmarks)
             min_dist = torch.min(dists, 1)
 
@@ -402,7 +387,7 @@ class tranVAETrainer(Trainer):
                         2).mean(0) for idx_class in args_uniq])
 
             # Check if unlabeled landmark is close to labeled landmark
-            if update_pos:
+            if update_pos and self.tau != 0:
                 results = []
                 for idx in range(len(landmarks)):
                     unlabeled_result = []
@@ -426,7 +411,7 @@ class tranVAETrainer(Trainer):
                     if l_prob > 0.5:
                         l_dists += torch.pow(landmarks[l_idx, :] - self.landmarks_labeled[preds[l_idx], :], 2).mean(0)
 
-                loss_val += l_dists
+                loss_val += self.tau * l_dists
 
         elif self.loss_metric == "t":
             q = t_dist(latent, landmarks, alpha=1)
@@ -438,6 +423,6 @@ class tranVAETrainer(Trainer):
 
         else:
             assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
-                          f"between 'overlap', 'mars' or 't'!"
+                          f"between 'dist' or 't'!"
 
         return loss_val, args_count
