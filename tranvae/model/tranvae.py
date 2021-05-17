@@ -8,7 +8,7 @@ from scarches.models.trvae.trvae import trVAE
 from scarches.models.trvae.losses import mse, mmd, zinb, nb
 from scarches.models.trvae._utils import one_hot_encoder
 
-from ._utils import euclidean_dist, get_overlap
+from ._utils import euclidean_dist, get_overlap, get_certainty
 
 
 class tranVAE(trVAE):
@@ -57,15 +57,20 @@ class tranVAE(trVAE):
             results.append(unlabeled_result)
         return torch.tensor(results, device=self.landmarks_unlabeled["mean"].device)
 
-    def classify(self, x, c=None, landmark=False):
+    def classify(self, x, c=None, landmark=False, metric="exp"):
         if landmark:
             latent = x
         else:
             latent = self.get_latent(x,c)
-
-        distances = euclidean_dist(latent, self.landmarks_labeled["mean"])
-        weighted_distances = F.softmax(-distances, dim=1)
-        probs, preds = torch.max(weighted_distances, dim=1)
+        if metric == "exp":
+            distances = euclidean_dist(latent, self.landmarks_labeled["mean"])
+            weighted_distances = F.softmax(-distances, dim=1)
+            probs, preds = torch.max(weighted_distances, dim=1)
+        elif metric == "var":
+            probs, preds = get_certainty(latent, self.landmarks_labeled["mean"], self.landmarks_labeled["var"])
+        else:
+            assert False, f"'{metric}' is not a available as a loss function please choose " \
+                          f"between 'exp' or 'var'!"
 
         return preds, probs
 

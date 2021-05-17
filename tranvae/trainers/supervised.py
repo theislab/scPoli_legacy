@@ -3,7 +3,6 @@ import scanpy as sc
 import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
-from torch.distributions import Normal
 from scarches.trainers.trvae.trainer import Trainer
 from scarches.trainers.trvae._utils import make_dataset
 

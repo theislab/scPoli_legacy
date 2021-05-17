@@ -231,6 +231,7 @@ class TRANVAE(BaseMixin):
             x: Optional[np.ndarray] = None,
             c: Optional[np.ndarray] = None,
             landmark=False,
+            metric="exp",
     ):
         device = next(self.model.parameters()).device
         if not landmark:
@@ -256,9 +257,9 @@ class TRANVAE(BaseMixin):
         subsampled_indices = indices.split(512)
         for batch in subsampled_indices:
             if landmark:
-                pred, prob = self.model.classify(x[batch, :], landmark=landmark)
+                pred, prob = self.model.classify(x[batch, :], landmark=landmark, metric=metric)
             else:
-                pred, prob = self.model.classify(x[batch, :], c[batch], landmark=landmark)
+                pred, prob = self.model.classify(x[batch, :], c[batch], landmark=landmark, metric=metric)
             preds += [pred.cpu().detach()]
             probs += [prob.cpu().detach()]
 

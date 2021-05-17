@@ -55,7 +55,7 @@ tranvae = TRANVAE.load(
     adata=adata_in_use
 )
 
-preds, probs = tranvae.classify()
+preds, probs = tranvae.classify(metric="var")
 print('Distance Classifier:', np.mean(preds == adata_in_use.obs[cell_type_key]))
 print(probs)
 
