@@ -226,7 +226,8 @@ class tranVAETrainer(Trainer):
                 latent[self.train_data.labeled_vector == 0],
                 torch.stack(self.landmarks_unlabeled).squeeze(),
                 self.tau,
-                True
+                update_var=True,
+                update_pos=True,
             )
             update_loss.backward()
             self.lndmk_optim.step()
@@ -379,7 +380,7 @@ class tranVAETrainer(Trainer):
 
         return loss, accuracy
 
-    def unlabeled_loss_basic(self, latent, landmarks, update_var):
+    def unlabeled_loss_basic(self, latent, landmarks, update_var, update_pos):
         if self.loss_metric == "mars":
             dists = euclidean_dist(latent, landmarks)
             min_dist = torch.min(dists, 1)
@@ -396,6 +397,34 @@ class tranVAETrainer(Trainer):
                     [torch.pow(
                         (latent - landmarks[idx_class].expand((latent.size(0),latent.size(1)))),
                         2).mean(0) for idx_class in args_uniq])
+
+            # Check if unlabeled landmark is close to labeled landmark
+            if update_pos:
+                results = []
+                for idx in range(len(landmarks)):
+                    unlabeled_result = []
+                    unlabeled_landmark_interval = torch.stack(
+                        (landmarks[idx, :] - self.landmarks_unlabeled_var[idx, :],
+                         landmarks[idx, :] + self.landmarks_unlabeled_var[idx, :])
+                    )
+                    for cell_type in range(len(self.landmarks_labeled)):
+                        labeled_landmark_interval = torch.stack(
+                            (self.landmarks_labeled[cell_type, :] - self.landmarks_labeled_var[cell_type, :],
+                             self.landmarks_labeled[cell_type, :] + self.landmarks_labeled_var[cell_type, :])
+                        )
+                        prob = get_overlap(unlabeled_landmark_interval, labeled_landmark_interval)
+                        unlabeled_result.append(prob)
+                    results.append(unlabeled_result)
+                results = torch.tensor(results, device=landmarks.device)
+                probs, preds = torch.max(results, dim=1)
+
+                l_dists = torch.tensor(0, device=self.device, dtype=torch.float64)
+                for l_idx, l_prob in enumerate(probs):
+                    if l_prob > 0.5:
+                        l_dists += torch.pow(landmarks[l_idx, :] - self.landmarks_labeled[preds[l_idx], :], 2).mean(0)
+
+                loss_val += l_dists
+
         else:
             q = t_dist(latent, landmarks, alpha=1)
             p = target_distribution(q)
@@ -405,8 +434,8 @@ class tranVAETrainer(Trainer):
             args_count = torch.stack([(y_pred == x_u).sum() for x_u in args_uniq])
         return loss_val, args_count
 
-    def landmark_unlabeled_loss(self, latent, landmarks, tau, update_var=False):
-        loss_val_test, args_count = self.unlabeled_loss_basic(latent, landmarks, update_var)
+    def landmark_unlabeled_loss(self, latent, landmarks, tau, update_var=False, update_pos=False):
+        loss_val_test, args_count = self.unlabeled_loss_basic(latent, landmarks, update_var, update_pos)
         if tau > 0:
             dists = euclidean_dist(landmarks, landmarks)
             nproto = landmarks.shape[0]
