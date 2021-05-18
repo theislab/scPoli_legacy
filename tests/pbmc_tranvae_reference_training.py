@@ -50,7 +50,6 @@ tranvae = TRANVAE(
     cell_type_key=cell_type_key,
     hidden_layer_sizes=[128, 128],
     use_mmd=False,
-    clustering='leiden',
 )
 tranvae.model.load_state_dict(torch.load(
     os.path.expanduser(f'~/Documents/tranvae_testing/pbmc_surg/reference_model_state_dict')))
@@ -58,7 +57,6 @@ tranvae.model.load_state_dict(torch.load(
 tranvae.train(
     n_epochs=tranvae_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
-    eta_epoch_anneal=100,
     eta=100,
 )
 ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/pbmc_surg/reference_model')

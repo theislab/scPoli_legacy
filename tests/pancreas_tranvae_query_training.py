@@ -56,15 +56,14 @@ new_tranvae = TRANVAE.load_query_data(
     adata=target_adata,
     reference_model=ref_path,
     labeled_indices=[],
-    clustering='leiden',
-    use_unlabeled_loss=True,
 )
 new_tranvae.train(
     n_epochs=surgery_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
     eta=1000,
     weight_decay=0,
-    resolution=5,
+    pretraining_epochs=50,
+    clustering_res=5,
 )
 
 query_latent = sc.AnnData(new_tranvae.get_latent())

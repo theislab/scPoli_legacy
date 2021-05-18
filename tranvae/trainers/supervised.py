@@ -63,9 +63,10 @@ class tranVAETrainer(Trainer):
             model,
             adata,
             n_clusters: int = None,
-            clustering: str = "kmeans",
+            clustering: str = "leiden",
+            pretraining_epochs: int = 0,
             use_unlabeled_loss: bool = True,
-            resolution: float = 1,
+            clustering_res: float = 1,
             loss_metric: str = "dist",
             eta: float = 1000,
             tau: float = 1,
@@ -80,9 +81,10 @@ class tranVAETrainer(Trainer):
         self.clustering = clustering
         self.n_clusters = n_clusters
         self.use_unlabeled_loss = use_unlabeled_loss
-        self.resolution = resolution
-        self.pretraining_epochs = 50
+        self.clustering_res = clustering_res
+        self.pretraining_epochs = pretraining_epochs
         self.use_early_stopping_orig = self.use_early_stopping
+        self.reload_best = False
 
         self.landmarks_labeled = None
         self.landmarks_labeled_var = None
@@ -293,7 +295,7 @@ class tranVAETrainer(Trainer):
                           f"clusters.")
                 lat_adata = sc.AnnData(lat_array)
                 sc.pp.neighbors(lat_adata)
-                sc.tl.leiden(lat_adata, resolution=self.resolution)
+                sc.tl.leiden(lat_adata, resolution=self.clustering_res)
 
                 # Taken from DESC model
                 features = pd.DataFrame(lat_adata.X, index=np.arange(0, lat_adata.shape[0]))

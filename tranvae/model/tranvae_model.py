@@ -53,9 +53,6 @@ class TRANVAE(BaseMixin):
         cell_type_key: str = None,
         cell_types: Optional[list] = None,
         labeled_indices: Optional[list] = None,
-        n_clusters: Optional[int] = None,
-        clustering: Optional[str] = None,
-        use_unlabeled_loss: Optional[bool] = True,
         landmarks_labeled: Optional[dict] = None,
         landmarks_unlabeled: Optional[dict] = None,
         hidden_layer_sizes: list = [256, 64],
@@ -134,9 +131,6 @@ class TRANVAE(BaseMixin):
             self.landmarks_unlabeled_["mean"] = self.landmarks_unlabeled_["mean"].to(next(self.model.parameters()).device)
             self.landmarks_unlabeled_["var"] = self.landmarks_unlabeled_["var"].to(next(self.model.parameters()).device)
 
-        self.n_clusters_ = n_clusters
-        self.clustering_ = clustering
-        self.use_unlabeled_loss_ = use_unlabeled_loss
         self.is_trained_ = False
 
         self.trainer = None
@@ -164,13 +158,9 @@ class TRANVAE(BaseMixin):
         self.trainer = tranVAETrainer(
             self.model,
             self.adata,
-            n_clusters=self.n_clusters_,
-            clustering=self.clustering_,
-            use_unlabeled_loss=self.use_unlabeled_loss_,
             labeled_indices=self.labeled_indices_,
             condition_key=self.condition_key_,
             cell_type_key=self.cell_type_key_,
-            reload_best=False,
             **kwargs)
         self.trainer.train(n_epochs, lr, eps)
         self.is_trained_ = True
@@ -313,9 +303,6 @@ class TRANVAE(BaseMixin):
             'cell_type_key': dct['cell_type_key_'],
             'cell_types': dct['cell_types_'],
             'labeled_indices': dct['labeled_indices_'],
-            'n_clusters': dct['n_clusters_'],
-            'clustering': dct['clustering_'],
-            'use_unlabeled_loss': dct['use_unlabeled_loss_'],
             'landmarks_labeled': dct['landmarks_labeled_'],
             'landmarks_unlabeled': dct['landmarks_unlabeled_'],
             'hidden_layer_sizes': dct['hidden_layer_sizes_'],
@@ -347,9 +334,6 @@ class TRANVAE(BaseMixin):
         adata: AnnData,
         reference_model: Union[str, 'TRVAE'],
         labeled_indices: Optional[list] = None,
-        n_clusters: Optional[int] = None,
-        clustering: Optional[str] = None,
-        use_unlabeled_loss: Optional[bool] = True,
         freeze: bool = True,
         freeze_expression: bool = True,
         remove_dropout: bool = True,
@@ -412,9 +396,6 @@ class TRANVAE(BaseMixin):
         if remove_dropout:
             init_params['dr_rate'] = 0.0
 
-        init_params['n_clusters'] = n_clusters
-        init_params['clustering'] = clustering
-        init_params['use_unlabeled_loss'] = use_unlabeled_loss
         init_params['labeled_indices'] = labeled_indices
 
         new_model = cls(adata, **init_params)

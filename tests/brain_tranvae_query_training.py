@@ -54,17 +54,15 @@ new_tranvae = TRANVAE.load_query_data(
     adata=target_adata,
     reference_model=ref_path,
     labeled_indices=[],
-    clustering='leiden',
-    use_unlabeled_loss=True,
 )
 ref_time = time.time()
 new_tranvae.train(
     n_epochs=surgery_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
-    eta_epoch_anneal=100,
     eta=10000,
     weight_decay=0,
-    resolution=5,
+    pretraining_epochs=50,
+    clustering_res=5,
 )
 ref_time = time.time() - ref_time
 print(ref_time)
