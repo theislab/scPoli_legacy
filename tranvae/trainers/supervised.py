@@ -69,7 +69,6 @@ class tranVAETrainer(Trainer):
             loss_metric: str = "dist",
             eta: float = 1000,
             tau: float = 1,
-            eta_epoch_anneal: int = None,
             labeled_indices: list = None,
             **kwargs
     ):
@@ -78,11 +77,12 @@ class tranVAETrainer(Trainer):
         self.loss_metric = loss_metric
         self.eta = eta
         self.tau = tau
-        self.eta_epoch_anneal = eta_epoch_anneal
         self.clustering = clustering
         self.n_clusters = n_clusters
         self.use_unlabeled_loss = use_unlabeled_loss
         self.resolution = resolution
+        self.pretraining_epochs = 50
+        self.use_early_stopping_orig = self.use_early_stopping
 
         self.landmarks_labeled = None
         self.landmarks_labeled_var = None
@@ -106,22 +106,6 @@ class tranVAETrainer(Trainer):
             self.landmarks_labeled = self.landmarks_labeled.to(device=self.device)
             self.landmarks_labeled_var = self.landmarks_labeled_var.to(device=self.device)
 
-    def calc_eta_coeff(self):
-        """Calculates current alpha coefficient for alpha annealing.
-
-           Parameters
-           ----------
-
-           Returns
-           -------
-           Current annealed alpha value
-        """
-        if self.alpha_epoch_anneal is not None:
-            eta_coeff = min(self.epoch / self.eta_epoch_anneal, 1)
-        else:
-            eta_coeff = 1
-        return eta_coeff
-
     def update_labeled_indices(self, labeled_indices):
         self.labeled_indices = labeled_indices
         self.train_data, self.valid_data = make_dataset(
@@ -135,15 +119,20 @@ class tranVAETrainer(Trainer):
             labeled_indices=self.labeled_indices,
         )
 
-    def before_loop(self, lr, eps):
-        self.initialize_landmarks()
-        if 0 in self.train_data.labeled_vector.unique().tolist():
-            self.lndmk_optim = torch.optim.Adam(
-                params=self.landmarks_unlabeled,
-                lr=lr,
-                eps=eps,
-                weight_decay=self.weight_decay
-            )
+    def on_epoch_begin (self, lr, eps):
+        if self.epoch == self.pretraining_epochs:
+            self.initialize_landmarks()
+            if 0 in self.train_data.labeled_vector.unique().tolist():
+                self.lndmk_optim = torch.optim.Adam(
+                    params=self.landmarks_unlabeled,
+                    lr=lr,
+                    eps=eps,
+                    weight_decay=self.weight_decay
+                )
+        if self.epoch < self.pretraining_epochs:
+            self.use_early_stopping = False
+        if self.use_early_stopping_orig and self.epoch >= self.pretraining_epochs:
+            self.use_early_stopping = True
 
     def get_latent_train(self):
         latents = []
@@ -166,26 +155,26 @@ class tranVAETrainer(Trainer):
         landmark_loss = torch.tensor(0, device=self.device, requires_grad=False)
         unlabeled_loss = torch.tensor(0, device=self.device, requires_grad=False)
         labeled_loss = torch.tensor(0, device=self.device, requires_grad=False)
+        if self.epoch >= self.pretraining_epochs:
+            # Calculate landmark loss for unlabeled data
+            if 0 in label_categories and self.use_unlabeled_loss:
+                unlabeled_loss, _ = self.landmark_unlabeled_loss(
+                    latent[total_batch["labeled"] == 0],
+                    torch.stack(self.landmarks_unlabeled).squeeze(),
+                )
+                landmark_loss = landmark_loss + unlabeled_loss
 
-        # Calculate landmark loss for unlabeled data
-        if 0 in label_categories and self.use_unlabeled_loss:
-            unlabeled_loss, _ = self.landmark_unlabeled_loss(
-                latent[total_batch["labeled"] == 0],
-                torch.stack(self.landmarks_unlabeled).squeeze(),
-            )
-            landmark_loss = landmark_loss + unlabeled_loss
-
-        # Calculate landmark loss for labeled data
-        if 1 in label_categories:
-            labeled_loss, labeled_accuracy = self.landmark_labeled_loss(
-                latent[total_batch["labeled"] == 1],
-                self.landmarks_labeled,
-                total_batch["celltype"][total_batch["labeled"] == 1],
-            )
-            landmark_loss = landmark_loss + labeled_loss
+            # Calculate landmark loss for labeled data
+            if 1 in label_categories:
+                labeled_loss, labeled_accuracy = self.landmark_labeled_loss(
+                    latent[total_batch["labeled"] == 1],
+                    self.landmarks_labeled,
+                    total_batch["celltype"][total_batch["labeled"] == 1],
+                )
+                landmark_loss = landmark_loss + labeled_loss
 
         # Loss addition and Logs
-        classifier_loss = self.calc_eta_coeff() * self.eta * landmark_loss
+        classifier_loss = self.eta * landmark_loss
         trvae_loss = recon_loss + self.calc_alpha_coeff() * kl_loss + mmd_loss
         loss = trvae_loss + classifier_loss
         self.iter_logs["loss"].append(loss.item())
@@ -193,45 +182,47 @@ class tranVAETrainer(Trainer):
             recon_loss.item() + kl_loss.item() + mmd_loss.item() + landmark_loss.item()
         )
         self.iter_logs["trvae_loss"].append(trvae_loss.item())
-        self.iter_logs["classifier_loss"].append(classifier_loss.item())
-        if 0 in label_categories and self.use_unlabeled_loss:
-            self.iter_logs["unlabeled_loss"].append(unlabeled_loss.item())
-        if 1 in label_categories:
-            self.iter_logs["labeled_loss"].append(labeled_loss.item())
-            self.iter_logs["accuracy"].append(labeled_accuracy.item())
+        if self.epoch >= self.pretraining_epochs:
+            self.iter_logs["classifier_loss"].append(classifier_loss.item())
+            if 0 in label_categories and self.use_unlabeled_loss:
+                self.iter_logs["unlabeled_loss"].append(unlabeled_loss.item())
+            if 1 in label_categories:
+                self.iter_logs["labeled_loss"].append(labeled_loss.item())
+                self.iter_logs["accuracy"].append(labeled_accuracy.item())
         return loss
 
     def on_epoch_end(self):
         self.model.eval()
 
-        latent = self.get_latent_train()
-        label_categories = self.train_data.labeled_vector.unique().tolist()
+        if self.epoch >= self.pretraining_epochs:
+            latent = self.get_latent_train()
+            label_categories = self.train_data.labeled_vector.unique().tolist()
 
-        # Update labeled landmark positions
-        if 1 in label_categories:
-            self.landmarks_labeled, self.landmarks_labeled_var = self.update_labeled_landmarks(
-                latent[self.train_data.labeled_vector == 1],
-                self.train_data.cell_types[self.train_data.labeled_vector == 1],
-                self.landmarks_labeled,
-                self.landmarks_labeled_var,
-                self.model.new_landmarks
-            )
+            # Update labeled landmark positions
+            if 1 in label_categories:
+                self.landmarks_labeled, self.landmarks_labeled_var = self.update_labeled_landmarks(
+                    latent[self.train_data.labeled_vector == 1],
+                    self.train_data.cell_types[self.train_data.labeled_vector == 1],
+                    self.landmarks_labeled,
+                    self.landmarks_labeled_var,
+                    self.model.new_landmarks
+                )
 
-        # Update unlabeled landmark positions
-        if 0 in label_categories:
-            for landmk in self.landmarks_unlabeled:
-                landmk.requires_grad = True
-            self.lndmk_optim.zero_grad()
-            update_loss, args_count = self.landmark_unlabeled_loss(
-                latent[self.train_data.labeled_vector == 0],
-                torch.stack(self.landmarks_unlabeled).squeeze(),
-                update_var=True,
-                update_pos=True,
-            )
-            update_loss.backward()
-            self.lndmk_optim.step()
-            for landmk in self.landmarks_unlabeled:
-                landmk.requires_grad = False
+            # Update unlabeled landmark positions
+            if 0 in label_categories:
+                for landmk in self.landmarks_unlabeled:
+                    landmk.requires_grad = True
+                self.lndmk_optim.zero_grad()
+                update_loss, args_count = self.landmark_unlabeled_loss(
+                    latent[self.train_data.labeled_vector == 0],
+                    torch.stack(self.landmarks_unlabeled).squeeze(),
+                    update_var=True,
+                    update_pos=True,
+                )
+                update_loss.backward()
+                self.lndmk_optim.step()
+                for landmk in self.landmarks_unlabeled:
+                    landmk.requires_grad = False
 
         self.model.train()
 
@@ -278,7 +269,7 @@ class tranVAETrainer(Trainer):
             lat_array = latent[self.train_data.labeled_vector == 0].cpu().detach().numpy()
 
             if self.clustering == "kmeans" and self.n_clusters is not None:
-                print(f"Initializing unlabeled landmarks with KMeans-Clustering with a given number of"
+                print(f"\nInitializing unlabeled landmarks with KMeans-Clustering with a given number of"
                       f"{self.n_clusters} clusters.")
                 k_means = KMeans(n_clusters=self.n_clusters).fit(lat_array)
                 k_means_lndmk = torch.tensor(k_means.cluster_centers_, device=self.device)
@@ -295,10 +286,10 @@ class tranVAETrainer(Trainer):
                     [self.landmarks_unlabeled[i].copy_(k_means_lndmk[i, :]) for i in range(k_means_lndmk.shape[0])]
             else:
                 if self.clustering == "kmeans" and self.n_clusters is None:
-                    print(f"Initializing unlabeled landmarks with Leiden-Clustering because no value for the"
+                    print(f"\nInitializing unlabeled landmarks with Leiden-Clustering because no value for the"
                           f"number of clusters was given.")
                 else:
-                    print(f"Initializing unlabeled landmarks with Leiden-Clustering with an unknown number of "
+                    print(f"\nInitializing unlabeled landmarks with Leiden-Clustering with an unknown number of "
                           f"clusters.")
                 lat_adata = sc.AnnData(lat_array)
                 sc.pp.neighbors(lat_adata)
