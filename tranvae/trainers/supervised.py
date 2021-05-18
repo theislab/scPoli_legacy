@@ -231,6 +231,16 @@ class tranVAETrainer(Trainer):
         super().on_epoch_end()
 
     def after_loop(self):
+        label_categories = self.train_data.labeled_vector.unique().tolist()
+        if 0 in label_categories:
+            latent = self.get_latent_train()
+            latent = latent[self.train_data.labeled_vector == 0]
+            landmarks = torch.stack(self.landmarks_unlabeled).squeeze()
+            self.landmarks_unlabeled_var = torch.stack(
+                [torch.pow(
+                    (latent - landmarks[idx_class].expand((latent.size(0), latent.size(1)))),
+                    2).mean(0) for idx_class in range(len(landmarks))])
+
         self.model.landmarks_labeled["mean"] = self.landmarks_labeled
         self.model.landmarks_labeled["var"] = self.landmarks_labeled_var
 
@@ -378,7 +388,7 @@ class tranVAETrainer(Trainer):
                 self.landmarks_unlabeled_var = torch.stack(
                     [torch.pow(
                         (latent - landmarks[idx_class].expand((latent.size(0),latent.size(1)))),
-                        2).mean(0) for idx_class in args_uniq])
+                        2).mean(0) for idx_class in range(len(landmarks))])
 
             # Check if unlabeled landmark is close to labeled landmark
             if update_pos and self.tau != 0:

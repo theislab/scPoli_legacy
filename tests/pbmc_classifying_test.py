@@ -67,7 +67,6 @@ labels = ['Correct', 'Incorrect']
 set_axis_style(ax, labels)
 plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}/uncertainty.png'), bbox_inches='tight')
 
-
 x,y,c,p = tranvae.get_landmarks_info()
 print(p)
 print(y)

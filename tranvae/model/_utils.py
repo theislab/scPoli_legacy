@@ -70,11 +70,13 @@ def get_certainty(latent, ct_mean, ct_var):
     distance = torch.pow(latent - ct_mean, 2)
 
     # Calculate percentage how likely it is that the cell belongs to each landmark cluster
-    overlap = distance / (2 * ct_var)
+    overlap = distance / (15 * ct_var)
     overlap = overlap.mean(2)
 
     # Choose the predicted cluster by looking at the maximum
-    probs, preds = torch.max(1 - overlap, dim=1)
-    probs = torch.max(torch.zeros_like(probs), probs)
+    overlap_cor = torch.max(torch.zeros_like(overlap), 1 - overlap)
+    overlap_normed = (overlap_cor.T / overlap_cor.sum(1)).T
+    probs, preds = torch.max(overlap_normed, dim=1)
+    probs[torch.isnan(probs)] = 0
 
     return probs, preds

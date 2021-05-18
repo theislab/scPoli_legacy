@@ -57,7 +57,6 @@ tranvae = TRANVAE.load(
 
 preds, probs = tranvae.classify(metric="var")
 print('Distance Classifier:', np.mean(preds == adata_in_use.obs[cell_type_key]))
-print(probs)
 
 correct_probs = probs[preds == adata_in_use.obs[cell_type_key]]
 incorrect_probs = probs[preds != adata_in_use.obs[cell_type_key]]
@@ -69,7 +68,6 @@ ax.violinplot(data)
 labels = ['Correct', 'Incorrect']
 set_axis_style(ax, labels)
 plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}/uncertainty.png'), bbox_inches='tight')
-
 
 x,y,c,p = tranvae.get_landmarks_info()
 print(p)
