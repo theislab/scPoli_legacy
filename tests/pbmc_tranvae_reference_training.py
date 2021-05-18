@@ -9,7 +9,7 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
-test_nr = 3
+test_nr = 2
 
 tranvae_epochs = 500
 
@@ -57,7 +57,7 @@ tranvae.model.load_state_dict(torch.load(
 tranvae.train(
     n_epochs=tranvae_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
-    eta=100,
+    eta=50,
 )
 ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/pbmc_surg/reference_model')
 tranvae.save(ref_path, overwrite=True)

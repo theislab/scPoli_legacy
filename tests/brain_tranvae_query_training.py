@@ -11,7 +11,7 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
-test_nr = 3
+test_nr = 2
 condition_key = "study"
 cell_type_key = "cell_type"
 

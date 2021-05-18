@@ -20,7 +20,7 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
-test_nr = 3
+test_nr = 2
 adata_all = sc.read(os.path.expanduser(
     f'~/Documents/benchmarking_datasets/Immune_ALL_human_wo_villani_rqr_normalized_hvg.h5ad'))
 adata = adata_all.copy()

@@ -10,7 +10,7 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
-test_nr = 3
+test_nr = 2
 
 
 surgery_epochs = 500
@@ -57,9 +57,9 @@ new_tranvae = TRANVAE.load_query_data(
 new_tranvae.train(
     n_epochs=surgery_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
-    eta=100,
+    eta=50,
     weight_decay=0,
-    pretraining_epochs=50,
+    pretraining_epochs=100,
     clustering_res=5,
 )
 

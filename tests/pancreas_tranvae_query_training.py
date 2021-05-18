@@ -60,9 +60,9 @@ new_tranvae = TRANVAE.load_query_data(
 new_tranvae.train(
     n_epochs=surgery_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
-    eta=1000,
+    eta=500,
     weight_decay=0,
-    pretraining_epochs=50,
+    pretraining_epochs=100,
     clustering_res=5,
 )
 

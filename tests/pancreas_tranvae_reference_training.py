@@ -60,7 +60,7 @@ tranvae.model.load_state_dict(torch.load(
 tranvae.train(
     n_epochs=tranvae_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
-    eta=1000,
+    eta=500,
 )
 ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/pancreas_surg/reference_model')
 tranvae.save(ref_path, overwrite=True)
