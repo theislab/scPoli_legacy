@@ -213,15 +213,15 @@ class TRANVAE(BaseMixin):
             labels = np.zeros(c.shape[0])
             for condition, label in self.model.condition_encoder.items():
                 labels[c == condition] = label
-            c = torch.tensor(labels, device=device)
+            c = torch.tensor(labels, device='cpu')
 
-        x = torch.tensor(x, device=device)
+        x = torch.tensor(x, device='cpu')
 
         latents = []
-        indices = torch.arange(x.size(0), device=device)
+        indices = torch.arange(x.size(0), device='cpu')
         subsampled_indices = indices.split(512)
         for batch in subsampled_indices:
-            latent = self.model.get_latent(x[batch,:], c[batch], mean)
+            latent = self.model.get_latent(x[batch,:].to(device), c[batch].to(device), mean)
             latents += [latent.cpu().detach()]
 
         return np.array(torch.cat(latents))

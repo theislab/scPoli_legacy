@@ -1,6 +1,7 @@
 import scanpy as sc
 import torch
 import os
+import time
 import numpy as np
 from scarches.dataset.trvae.data_handling import remove_sparsity
 import matplotlib.pyplot as plt
@@ -53,16 +54,20 @@ new_tranvae = TRANVAE.load_query_data(
     adata=target_adata,
     reference_model=ref_path,
     labeled_indices=[],
-    clustering='louvain',
+    clustering='leiden',
     use_unlabeled_loss=True,
 )
+ref_time = time.time()
 new_tranvae.train(
     n_epochs=surgery_epochs,
     early_stopping_kwargs=early_stopping_kwargs,
     eta_epoch_anneal=100,
-    eta=1000,
+    eta=10000,
     weight_decay=0,
+    resolution=5,
 )
+ref_time = time.time() - ref_time
+print(ref_time)
 
 query_latent = sc.AnnData(new_tranvae.get_latent())
 query_latent.obs['celltype'] = target_adata.obs[cell_type_key].tolist()

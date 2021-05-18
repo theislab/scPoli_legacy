@@ -53,7 +53,7 @@ tranvae = TRANVAE(
     cell_type_key=cell_type_key,
     hidden_layer_sizes=[128, 128],
     use_mmd=False,
-    clustering='louvain',
+    clustering='leiden',
 )
 tranvae.model.load_state_dict(torch.load(
     os.path.expanduser(f'~/Documents/tranvae_testing/pancreas_surg/reference_model_state_dict')))

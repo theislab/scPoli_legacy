@@ -65,6 +65,7 @@ class tranVAETrainer(Trainer):
             n_clusters: int = None,
             clustering: str = "kmeans",
             use_unlabeled_loss: bool = True,
+            resolution: float = 1,
             loss_metric: str = "dist",
             eta: float = 1000,
             tau: float = 1,
@@ -81,6 +82,7 @@ class tranVAETrainer(Trainer):
         self.clustering = clustering
         self.n_clusters = n_clusters
         self.use_unlabeled_loss = use_unlabeled_loss
+        self.resolution = resolution
 
         self.landmarks_labeled = None
         self.landmarks_labeled_var = None
@@ -152,9 +154,9 @@ class tranVAETrainer(Trainer):
                 self.train_data.data[batch, :].to(self.device),
                 self.train_data.conditions[batch].to(self.device)
             )
-            latents += [latent]
+            latents += [latent.cpu().detach()]
         latent = torch.cat(latents)
-        return latent
+        return latent.to(self.device)
 
     def loss(self, total_batch=None):
         latent, recon_loss, kl_loss, mmd_loss = self.model(**total_batch)
@@ -300,7 +302,7 @@ class tranVAETrainer(Trainer):
                           f"clusters.")
                 lat_adata = sc.AnnData(lat_array)
                 sc.pp.neighbors(lat_adata)
-                sc.tl.leiden(lat_adata)
+                sc.tl.leiden(lat_adata, resolution=self.resolution)
 
                 # Taken from DESC model
                 features = pd.DataFrame(lat_adata.X, index=np.arange(0, lat_adata.shape[0]))
