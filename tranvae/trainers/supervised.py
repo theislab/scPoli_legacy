@@ -85,6 +85,7 @@ class tranVAETrainer(Trainer):
         self.pretraining_epochs = pretraining_epochs
         self.use_early_stopping_orig = self.use_early_stopping
         self.reload_best = False
+        self.var_scaling = 1
 
         self.landmarks_labeled = None
         self.landmarks_labeled_var = None
@@ -236,10 +237,18 @@ class tranVAETrainer(Trainer):
             latent = self.get_latent_train()
             latent = latent[self.train_data.labeled_vector == 0]
             landmarks = torch.stack(self.landmarks_unlabeled).squeeze()
+
+            dists = euclidean_dist(latent, landmarks)
+            min_dist = torch.min(dists, 1)
+            y_hat = min_dist[1]
+
             self.landmarks_unlabeled_var = torch.stack(
                 [torch.pow(
-                    (latent - landmarks[idx_class].expand((latent.size(0), latent.size(1)))),
-                    2).mean(0) for idx_class in range(len(landmarks))])
+                    (latent[y_hat == idx_class] - landmarks[idx_class].expand((latent[y_hat == idx_class].size(0),
+                                                                               latent[y_hat == idx_class].size(1))
+                                                                              )
+                     ), 2).mean(0) for idx_class in range(len(landmarks))])
+            self.landmarks_unlabeled_var = self.var_scaling * self.landmarks_unlabeled_var
 
         self.model.landmarks_labeled["mean"] = self.landmarks_labeled
         self.model.landmarks_labeled["var"] = self.landmarks_labeled_var
@@ -384,49 +393,51 @@ class tranVAETrainer(Trainer):
             min_dist = min_dist[0]  # get_distances
 
             loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
-            if update_var:
-                self.landmarks_unlabeled_var = torch.stack(
-                    [torch.pow(
-                        (latent - landmarks[idx_class].expand((latent.size(0),latent.size(1)))),
-                        2).mean(0) for idx_class in range(len(landmarks))])
-
-            # Check if unlabeled landmark is close to labeled landmark
-            if update_pos and self.tau != 0:
-                results = []
-                for idx in range(len(landmarks)):
-                    unlabeled_result = []
-                    unlabeled_landmark_interval = torch.stack(
-                        (landmarks[idx, :] - self.landmarks_unlabeled_var[idx, :],
-                         landmarks[idx, :] + self.landmarks_unlabeled_var[idx, :])
-                    )
-                    for cell_type in range(len(self.landmarks_labeled)):
-                        labeled_landmark_interval = torch.stack(
-                            (self.landmarks_labeled[cell_type, :] - self.landmarks_labeled_var[cell_type, :],
-                             self.landmarks_labeled[cell_type, :] + self.landmarks_labeled_var[cell_type, :])
-                        )
-                        prob = get_overlap(unlabeled_landmark_interval, labeled_landmark_interval)
-                        unlabeled_result.append(prob)
-                    results.append(unlabeled_result)
-                results = torch.tensor(results, device=landmarks.device)
-                probs, preds = torch.max(results, dim=1)
-
-                l_dists = torch.tensor(0, device=self.device, dtype=torch.float64)
-                for l_idx, l_prob in enumerate(probs):
-                    if l_prob > 0.5:
-                        l_dists += torch.pow(landmarks[l_idx, :] - self.landmarks_labeled[preds[l_idx], :], 2).mean(0)
-
-                loss_val += self.tau * l_dists
-
         elif self.loss_metric == "t":
             q = t_dist(latent, landmarks, alpha=1)
             p = target_distribution(q)
             loss_val = kl_loss(q, p)
-            y_pred = q.argmax(1)
-            args_uniq = torch.unique(y_pred, sorted=True)
-            args_count = torch.stack([(y_pred == x_u).sum() for x_u in args_uniq])
-
+            y_hat = q.argmax(1)
+            args_uniq = torch.unique(y_hat, sorted=True)
+            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
         else:
             assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
                           f"between 'dist' or 't'!"
+
+        if update_var:
+            self.landmarks_unlabeled_var = torch.stack(
+                [torch.pow(
+                    (latent[y_hat == idx_class] - landmarks[idx_class].expand((latent[y_hat == idx_class].size(0),
+                                                                               latent[y_hat == idx_class].size(1))
+                                                                              )
+                     ), 2).mean(0) for idx_class in range(len(landmarks))])
+            self.landmarks_unlabeled_var = self.var_scaling * self.landmarks_unlabeled_var
+
+        # Check if unlabeled landmark is close to labeled landmark
+        if update_pos and self.tau != 0:
+            results = []
+            for idx in range(len(landmarks)):
+                unlabeled_result = []
+                unlabeled_landmark_interval = torch.stack(
+                    (landmarks[idx, :] - self.landmarks_unlabeled_var[idx, :],
+                     landmarks[idx, :] + self.landmarks_unlabeled_var[idx, :])
+                )
+                for cell_type in range(len(self.landmarks_labeled)):
+                    labeled_landmark_interval = torch.stack(
+                        (self.landmarks_labeled[cell_type, :] - self.landmarks_labeled_var[cell_type, :],
+                         self.landmarks_labeled[cell_type, :] + self.landmarks_labeled_var[cell_type, :])
+                    )
+                    prob = get_overlap(unlabeled_landmark_interval, labeled_landmark_interval)
+                    unlabeled_result.append(prob)
+                results.append(unlabeled_result)
+            results = torch.tensor(results, device=landmarks.device)
+            probs, preds = torch.max(results, dim=1)
+
+            l_dists = torch.tensor(0, device=self.device, dtype=torch.float64)
+            for l_idx, l_prob in enumerate(probs):
+                if l_prob > 0.5:
+                    l_dists += torch.pow(landmarks[l_idx, :] - self.landmarks_labeled[preds[l_idx], :], 2).mean(0)
+
+            loss_val += self.tau * l_dists
 
         return loss_val, args_count
