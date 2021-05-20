@@ -162,7 +162,7 @@ class tranVAETrainer(Trainer):
             # Calculate landmark loss for unlabeled data
             if 0 in label_categories and self.use_unlabeled_loss:
                 unlabeled_loss, _ = self.landmark_unlabeled_loss(
-                    latent[total_batch["labeled"] == 0],
+                    latent,
                     torch.stack(self.landmarks_unlabeled).squeeze(),
                 )
                 landmark_loss = landmark_loss + unlabeled_loss
@@ -217,7 +217,7 @@ class tranVAETrainer(Trainer):
                     landmk.requires_grad = True
                 self.lndmk_optim.zero_grad()
                 update_loss, args_count = self.landmark_unlabeled_loss(
-                    latent[self.train_data.labeled_vector == 0],
+                    latent,
                     torch.stack(self.landmarks_unlabeled).squeeze(),
                     update_var=True,
                     update_pos=True,
@@ -235,7 +235,6 @@ class tranVAETrainer(Trainer):
         label_categories = self.train_data.labeled_vector.unique().tolist()
         if 0 in label_categories:
             latent = self.get_latent_train()
-            latent = latent[self.train_data.labeled_vector == 0]
             landmarks = torch.stack(self.landmarks_unlabeled).squeeze()
 
             dists = euclidean_dist(latent, landmarks)
@@ -285,7 +284,7 @@ class tranVAETrainer(Trainer):
 
         # Init unlabeled Landmarks if unlabeled data existent
         if 0 in self.train_data.labeled_vector.unique().tolist():
-            lat_array = latent[self.train_data.labeled_vector == 0].cpu().detach().numpy()
+            lat_array = latent.cpu().detach().numpy()
 
             if self.clustering == "kmeans" and self.n_clusters is not None:
                 print(f"\nInitializing unlabeled landmarks with KMeans-Clustering with a given number of"

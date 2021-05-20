@@ -40,7 +40,7 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 experiment = "pancreas"
-unlabeled_strat = "batch"
+unlabeled_strat = "ct"
 test_nr = 3
 cells_per_ct = 500
 
