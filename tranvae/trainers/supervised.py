@@ -383,14 +383,12 @@ class tranVAETrainer(Trainer):
         if self.loss_metric == "dist":
             dists = euclidean_dist(latent, landmarks)
             min_dist = torch.min(dists, 1)
-
             y_hat = min_dist[1]
             args_uniq = torch.unique(y_hat, sorted=True)
             args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
-
             min_dist = min_dist[0]  # get_distances
-
             loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
+
         elif self.loss_metric == "t":
             q = t_dist(latent, landmarks, alpha=1)
             p = target_distribution(q)
@@ -398,6 +396,7 @@ class tranVAETrainer(Trainer):
             y_hat = q.argmax(1)
             args_uniq = torch.unique(y_hat, sorted=True)
             args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
+
         elif self.loss_metric == "seurat":
             dists = euclidean_dist(latent, landmarks)
             dists = 1 - (dists.T / dists.sum(1)).T

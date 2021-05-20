@@ -12,7 +12,8 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
-dists = torch.tensor([0,1,2,3,4,5,6,7,8,9,10], dtype=torch.float64)
+'''
+dists = torch.tensor([4,4,4,4,4,4,4,5], dtype=torch.float64)
 q = torch.tensor([0.9])
 quantile = torch.quantile(dists, 0.9, dim=0)
 print(quantile)
@@ -26,6 +27,7 @@ print(prob)
 loss = (dists*prob).sum(1).mean(0)
 print(loss)
 exit()
+'''
 
 def set_axis_style(ax, labels):
     ax.get_xaxis().set_tick_params(direction='out')
@@ -38,7 +40,7 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 experiment = "pancreas"
-unlabeled_strat = "ct"
+unlabeled_strat = "batch"
 test_nr = 3
 cells_per_ct = 500
 
