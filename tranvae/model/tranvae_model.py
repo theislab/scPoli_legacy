@@ -267,7 +267,7 @@ class TRANVAE(BaseMixin):
 
         return np.array(full_pred_names), full_prob
 
-    def check_for_unseen(self):
+    def check_for_unseen(self, threshold=0):
         if self.model.landmarks_unlabeled["mean"] is not None:
             pred, prob = self.model.check_for_unseen()
             full_prob = prob.detach().cpu().numpy()
@@ -275,19 +275,21 @@ class TRANVAE(BaseMixin):
             inv_ct_encoder = {v: k for k, v in self.model.cell_type_encoder.items()}
             full_pred_names = []
             for idx, pred in enumerate(full_pred):
-                if full_prob[idx]:
+                if full_prob[idx] > threshold:
                     full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                else:
+                    full_pred_names.append('Unknown')
             return np.array(full_pred_names), full_prob
         else:
             print("There are no unlabeled Landmarks in the model.")
             return None, None
 
-    def get_landmarks_info(self):
+    def get_landmarks_info(self, metric="dist", threshold=0):
         landmarks_l = self.landmarks_labeled_["mean"].detach().cpu().numpy()
         landmarks_u = self.landmarks_unlabeled_["mean"].detach().cpu().numpy()
 
-        l_pred, _ = self.classify(landmarks_l, landmark=True)
-        u_pred, u_prob = self.check_for_unseen()
+        l_pred, l_prob = self.classify(landmarks_l, landmark=True, metric=metric)
+        u_pred, u_prob = self.check_for_unseen(threshold=threshold)
         x_info = np.concatenate((landmarks_l, landmarks_u))
         label_info = np.concatenate((l_pred, u_pred))
         prob_info = np.concatenate((np.ones_like(l_pred), u_prob))

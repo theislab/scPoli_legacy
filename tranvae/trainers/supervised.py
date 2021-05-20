@@ -85,7 +85,8 @@ class tranVAETrainer(Trainer):
         self.pretraining_epochs = pretraining_epochs
         self.use_early_stopping_orig = self.use_early_stopping
         self.reload_best = False
-        self.quantile = 0.9
+        self.quantile = 0.95
+        self.std = 1
 
         self.landmarks_labeled = None
         self.landmarks_labeled_q = None
@@ -228,7 +229,6 @@ class tranVAETrainer(Trainer):
                     landmk.requires_grad = False
 
         self.model.train()
-
         super().on_epoch_end()
 
     def after_loop(self):
@@ -272,7 +272,8 @@ class tranVAETrainer(Trainer):
                         for value in self.model.new_landmarks:
                             indices = labeled_cell_types.eq(value).nonzero()
                             landmark = labeled_latent[indices].mean(0)
-                            landmark_q = torch.pow(labeled_latent[indices].std(0), 2)
+                            dist = euclidean_dist(labeled_latent[labeled_cell_types == value], landmark)
+                            landmark_q = torch.quantile(dist, self.quantile).unsqueeze(0)
                             self.landmarks_labeled = torch.cat([self.landmarks_labeled, landmark])
                             self.landmarks_labeled_q = torch.cat([self.landmarks_labeled_q, landmark_q])
             else:
@@ -380,31 +381,25 @@ class tranVAETrainer(Trainer):
         return loss, accuracy
 
     def landmark_unlabeled_loss(self, latent, landmarks, update_q=False, update_pos=False):
-        if self.loss_metric == "dist":
-            dists = euclidean_dist(latent, landmarks)
-            min_dist, y_hat = torch.min(dists, 1)
-            args_uniq = torch.unique(y_hat, sorted=True)
-            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
-            min_dist = min_dist[0]  # get_distances
-            loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
+        dists = euclidean_dist(latent, landmarks)
+        min_dist, y_hat = torch.min(dists, 1)
+        args_uniq = torch.unique(y_hat, sorted=True)
+        args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
 
+        if self.loss_metric == "dist":
+            loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
         elif self.loss_metric == "t":
             q = t_dist(latent, landmarks, alpha=1)
-            p = target_distribution(q)
-            loss_val = kl_loss(q, p)
             y_hat = q.argmax(1)
             args_uniq = torch.unique(y_hat, sorted=True)
             args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
-
+            p = target_distribution(q)
+            loss_val = kl_loss(q, p)
         elif self.loss_metric == "seurat":
-            dists = euclidean_dist(latent, landmarks)
-            min_dist, y_hat = torch.min(dists, 1)
             dists_t = 1 - (dists.T / dists.sum(1)).T
-            prob = 1 - torch.exp(-dists_t / 4)
+            prob = 1 - torch.exp(-dists_t / (2/self.std)**2)
             prob = (prob.T / prob.sum(1)).T
             loss_val = (dists * prob).sum(1).mean(0)
-            args_uniq = torch.unique(y_hat, sorted=True)
-            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
         else:
             assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
                           f"between 'dist','t' or 'seurat'!"

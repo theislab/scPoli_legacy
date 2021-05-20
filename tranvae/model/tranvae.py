@@ -8,7 +8,7 @@ from scarches.models.trvae.trvae import trVAE
 from scarches.models.trvae.losses import mse, mmd, zinb, nb
 from scarches.models.trvae._utils import one_hot_encoder
 
-from ._utils import euclidean_dist, get_overlap, get_certainty
+from ._utils import euclidean_dist
 
 
 class tranVAE(trVAE):
@@ -38,42 +38,34 @@ class tranVAE(trVAE):
             for idx in range(self.n_cell_types - len(self.landmarks_labeled["mean"])):
                 self.new_landmarks.append(len(self.landmarks_labeled["mean"]) + idx)
 
-    def get_prob_matrix(self):
-        # Returns (N-unlabeled-Landmarks x N-cell-types)-matrix with probabilities
-        results = []
-        for idx in range(len(self.landmarks_unlabeled["mean"])):
-            unlabeled_result = []
-            unlabeled_landmark_interval = torch.stack(
-                (self.landmarks_unlabeled["mean"][idx,:] - self.landmarks_unlabeled["var"][idx,:],
-                 self.landmarks_unlabeled["mean"][idx,:] + self.landmarks_unlabeled["var"][idx,:])
-            )
-            for cell_type in range(len(self.landmarks_labeled["mean"])):
-                labeled_landmark_interval = torch.stack(
-                    (self.landmarks_labeled["mean"][cell_type,:] - self.landmarks_labeled["var"][cell_type,:],
-                     self.landmarks_labeled["mean"][cell_type,:] + self.landmarks_labeled["var"][cell_type,:])
-                )
-                prob = get_overlap(unlabeled_landmark_interval, labeled_landmark_interval)
-                unlabeled_result.append(prob)
-            results.append(unlabeled_result)
-        return torch.tensor(results, device=self.landmarks_unlabeled["mean"].device)
-
-    def classify(self, x, c=None, landmark=False, metric="exp"):
+    def classify(self, x, c=None, landmark=False, metric="dist"):
         if landmark:
             latent = x
         else:
             latent = self.get_latent(x,c)
-        if metric == "exp":
-            distances = euclidean_dist(latent, self.landmarks_labeled["mean"])
-            weighted_distances = F.softmax(-distances, dim=1)
+
+        dists = euclidean_dist(latent, self.landmarks_labeled["mean"])
+
+        if metric == "dist":
+            weighted_distances = F.softmax(-dists, dim=1)
             probs, preds = torch.max(weighted_distances, dim=1)
         elif metric == "seurat":
-            dists = euclidean_dist(latent, self.landmarks_labeled["mean"])
             dists_t = 1 - (dists.T / dists.sum(1)).T
             prob = 1 - torch.exp(-dists_t / 4)
             prob = (prob.T / prob.sum(1)).T
             probs, preds = torch.max(prob, dim=1)
-        elif metric == "var":
-            probs, preds = get_certainty(latent, self.landmarks_labeled["mean"], self.landmarks_labeled["var"])
+        elif metric == "overlap":
+            quantiles_view = self.landmarks_labeled["q"].unsqueeze(0).expand(dists.size(0), dists.size(1))
+
+            #overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
+            #overlap = 1 - (quantiles_view - overlap / quantiles_view)
+
+            overlap = dists / quantiles_view
+            overlap = (overlap.T / overlap.max(1)[0]).T
+            overlap = 1 - overlap
+
+            overlap = (overlap.T / overlap.sum(1)).T
+            probs, preds = torch.max(overlap, dim=1)
         else:
             assert False, f"'{metric}' is not a available as a loss function please choose " \
                           f"between 'exp', 'var' or 'seurat'!"
@@ -81,8 +73,20 @@ class tranVAE(trVAE):
         return preds, probs
 
     def check_for_unseen(self):
-        results = self.get_prob_matrix()
-        probs, preds = torch.max(results, dim=1)
+        landmark_dists = euclidean_dist(self.landmarks_unlabeled["mean"], self.landmarks_labeled["mean"])
+        quantile_sum = self.landmarks_unlabeled["q"].unsqueeze(1).expand(landmark_dists.size(0),
+                                                                         landmark_dists.size(1)) + \
+                       self.landmarks_labeled["q"].unsqueeze(0).expand(landmark_dists.size(0),
+                                                                       landmark_dists.size(1))
+
+        #overlap = torch.max(torch.zeros_like(landmark_dists), (quantile_sum - landmark_dists)/landmark_dists)
+        #overlap = torch.nan_to_num((overlap.T / overlap.sum(1))).T
+
+        overlap = landmark_dists / quantile_sum
+        overlap = (overlap.T / overlap.max(1)[0]).T
+        overlap = 1 - overlap
+        overlap = (overlap.T / overlap.sum(1)).T
+        probs, preds = torch.max(overlap, dim=1)
         return preds, probs
 
     def forward(self, x=None, batch=None, sizefactor=None, celltype=None, labeled=None):
