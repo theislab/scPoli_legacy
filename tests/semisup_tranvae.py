@@ -13,9 +13,20 @@ sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
 '''
-dists = torch.tensor([4,4,4,4,4,4,4,5], dtype=torch.float64)
+dists = torch.tensor([[1,2,3],[3,1,2],[3,2,4],[2,3,4]], dtype=torch.float64)
+min_dists, y_hat = torch.min(dists, 1)
+quantiles = []
+landmarks = [0,1,2]
+for idx_class in range(len(landmarks)):
+    if idx_class in y_hat:
+        quantiles.append(torch.quantile(min_dists[y_hat == idx_class], 0.9, dim=0))
+    else:
+        quantiles.append(torch.tensor(0.0))
+q_vector = torch.stack(quantiles)
+
+exit()
 q = torch.tensor([0.9])
-quantile = torch.quantile(dists, 0.9, dim=0)
+quantile = torch.quantile(dists, 0.9)
 print(quantile)
 exit()
 print(dists)
@@ -40,7 +51,7 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 experiment = "pancreas"
-unlabeled_strat = "ct"
+unlabeled_strat = "batch"
 test_nr = 3
 cells_per_ct = 500
 
@@ -182,7 +193,7 @@ sc.pl.umap(adata_latent,
            )
 plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/umap_tranvae.png'), bbox_inches='tight')
 
-preds, probs = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric="var")
+preds, probs = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric="seurat")
 print('Distance Classifier:', np.mean(preds == unlabeled_adata.obs[cell_type_key]))
 text_file = open(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/acc_report.txt'), "w")
 n = text_file.write(classification_report(y_true=unlabeled_adata.obs[cell_type_key], y_pred=preds))

@@ -28,8 +28,8 @@ class tranVAE(trVAE):
         self.n_cell_types = len(cell_types)
         self.cell_types = cell_types
         self.cell_type_encoder = {k: v for k, v in zip(cell_types, range(len(cell_types)))}
-        self.landmarks_labeled = {"mean": None, "var": None} if landmarks_labeled is None else landmarks_labeled
-        self.landmarks_unlabeled = {"mean": None, "var": None} if landmarks_unlabeled is None else landmarks_unlabeled
+        self.landmarks_labeled = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
+        self.landmarks_unlabeled = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
         self.new_landmarks = None
 
         if self.landmarks_labeled["mean"] is not None:
@@ -66,11 +66,17 @@ class tranVAE(trVAE):
             distances = euclidean_dist(latent, self.landmarks_labeled["mean"])
             weighted_distances = F.softmax(-distances, dim=1)
             probs, preds = torch.max(weighted_distances, dim=1)
+        elif metric == "seurat":
+            dists = euclidean_dist(latent, self.landmarks_labeled["mean"])
+            dists_t = 1 - (dists.T / dists.sum(1)).T
+            prob = 1 - torch.exp(-dists_t / 4)
+            prob = (prob.T / prob.sum(1)).T
+            probs, preds = torch.max(prob, dim=1)
         elif metric == "var":
             probs, preds = get_certainty(latent, self.landmarks_labeled["mean"], self.landmarks_labeled["var"])
         else:
             assert False, f"'{metric}' is not a available as a loss function please choose " \
-                          f"between 'exp' or 'var'!"
+                          f"between 'exp', 'var' or 'seurat'!"
 
         return preds, probs
 

@@ -104,8 +104,8 @@ class TRANVAE(BaseMixin):
         self.use_ln_ = use_ln
 
         self.input_dim_ = adata.n_vars
-        self.landmarks_labeled_ = {"mean": None, "var": None} if landmarks_labeled is None else landmarks_labeled
-        self.landmarks_unlabeled_ = {"mean": None, "var": None} if landmarks_unlabeled is None else landmarks_unlabeled
+        self.landmarks_labeled_ = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
+        self.landmarks_unlabeled_ = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
 
         self.model = tranVAE(
             input_dim=self.input_dim_,
@@ -126,10 +126,10 @@ class TRANVAE(BaseMixin):
         )
         if self.landmarks_labeled_["mean"] is not None:
             self.landmarks_labeled_["mean"] = self.landmarks_labeled_["mean"].to(next(self.model.parameters()).device)
-            self.landmarks_labeled_["var"] = self.landmarks_labeled_["var"].to(next(self.model.parameters()).device)
+            self.landmarks_labeled_["q"] = self.landmarks_labeled_["q"].to(next(self.model.parameters()).device)
         if self.landmarks_unlabeled_["mean"] is not None:
             self.landmarks_unlabeled_["mean"] = self.landmarks_unlabeled_["mean"].to(next(self.model.parameters()).device)
-            self.landmarks_unlabeled_["var"] = self.landmarks_unlabeled_["var"].to(next(self.model.parameters()).device)
+            self.landmarks_unlabeled_["q"] = self.landmarks_unlabeled_["q"].to(next(self.model.parameters()).device)
 
         self.is_trained_ = False
 
