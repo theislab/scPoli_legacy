@@ -85,7 +85,7 @@ class tranVAETrainer(Trainer):
         self.pretraining_epochs = pretraining_epochs
         self.use_early_stopping_orig = self.use_early_stopping
         self.reload_best = False
-        self.var_scaling = 1
+        self.var_scaling = 1000000
 
         self.landmarks_labeled = None
         self.landmarks_labeled_var = None
@@ -244,9 +244,7 @@ class tranVAETrainer(Trainer):
 
             self.landmarks_unlabeled_var = torch.stack(
                 [torch.pow(
-                    (latent[y_hat == idx_class] - landmarks[idx_class].expand((latent[y_hat == idx_class].size(0),
-                                                                               latent[y_hat == idx_class].size(1))
-                                                                              )
+                    (latent - landmarks[idx_class].expand((latent.size(0),latent.size(1)))
                      ), 2).mean(0) for idx_class in range(len(landmarks))])
             self.landmarks_unlabeled_var = self.var_scaling * self.landmarks_unlabeled_var
 
@@ -400,16 +398,23 @@ class tranVAETrainer(Trainer):
             y_hat = q.argmax(1)
             args_uniq = torch.unique(y_hat, sorted=True)
             args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
+        elif self.loss_metric == "seurat":
+            dists = euclidean_dist(latent, landmarks)
+            dists = 1 - (dists.T / dists.sum(1)).T
+            prob = 1 - torch.exp(-dists / 4)
+            prob = (prob.T / prob.sum(1)).T
+            loss_val = (dists * prob).sum(1).mean(0)
+            y_hat = dists.argmin(1)
+            args_uniq = torch.unique(y_hat, sorted=True)
+            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
         else:
             assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
-                          f"between 'dist' or 't'!"
+                          f"between 'dist','t' or 'seurat'!"
 
         if update_var:
             self.landmarks_unlabeled_var = torch.stack(
                 [torch.pow(
-                    (latent[y_hat == idx_class] - landmarks[idx_class].expand((latent[y_hat == idx_class].size(0),
-                                                                               latent[y_hat == idx_class].size(1))
-                                                                              )
+                    (latent - landmarks[idx_class].expand((latent.size(0),latent.size(1)))
                      ), 2).mean(0) for idx_class in range(len(landmarks))])
             self.landmarks_unlabeled_var = self.var_scaling * self.landmarks_unlabeled_var
 

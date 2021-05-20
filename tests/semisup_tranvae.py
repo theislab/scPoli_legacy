@@ -12,6 +12,20 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
+dists = torch.tensor([0,1,2,3,4,5,6,7,8,9,10], dtype=torch.float64)
+q = torch.tensor([0.9])
+quantile = torch.quantile(dists, 0.9, dim=0)
+print(quantile)
+exit()
+print(dists)
+b = 1 - (dists.T / dists.sum(1)).T
+print(b)
+prob = 1 - torch.exp(-b/4)
+prob = (prob.T / prob.sum(1)).T
+print(prob)
+loss = (dists*prob).sum(1).mean(0)
+print(loss)
+exit()
 
 def set_axis_style(ax, labels):
     ax.get_xaxis().set_tick_params(direction='out')
@@ -37,8 +51,9 @@ tranvae_epochs = 500
 pretraining_epochs = 200
 alpha_epoch_anneal = 100
 eta = 1000
+tau = 0
 clustering_res = 2
-loss_metric = "t"
+loss_metric = "seurat"
 
 
 early_stopping_kwargs = {
@@ -142,6 +157,7 @@ tranvae.train(
     pretraining_epochs=pretraining_epochs,
     alpha_epoch_anneal=alpha_epoch_anneal,
     eta=eta,
+    tau=tau,
     clustering_res=clustering_res,
     loss_metric=loss_metric
 )
