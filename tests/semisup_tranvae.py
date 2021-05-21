@@ -34,13 +34,13 @@ use_mmd = False
 
 # Training Params
 tranvae_epochs = 500
-pretraining_epochs = 200
+pretraining_epochs = 0
 alpha_epoch_anneal = 100
-eta = 100
+eta = 10000
 tau = 0
 clustering_res = 2
-loss_metric = "dist"
-class_metric = "seurat"
+loss_metric = "overlap"
+class_metric = "overlap"
 
 
 early_stopping_kwargs = {

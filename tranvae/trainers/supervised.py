@@ -1,4 +1,5 @@
 import torch
+from torch.nn import NLLLoss
 import scanpy as sc
 import pandas as pd
 import numpy as np
@@ -87,6 +88,7 @@ class tranVAETrainer(Trainer):
         self.reload_best = False
         self.quantile = 0.95
         self.std = 1
+        self.cross_entropy = NLLLoss()
 
         self.landmarks_labeled = None
         self.landmarks_labeled_q = None
@@ -228,6 +230,7 @@ class tranVAETrainer(Trainer):
                 for landmk in self.landmarks_unlabeled:
                     landmk.requires_grad = False
 
+
         self.model.train()
         super().on_epoch_end()
 
@@ -339,6 +342,15 @@ class tranVAETrainer(Trainer):
 
                 with torch.no_grad():
                     [self.landmarks_unlabeled[i].copy_(leiden_lndmk[i, :]) for i in range(leiden_lndmk.shape[0])]
+                    dists = euclidean_dist(latent, torch.stack(self.landmarks_unlabeled).squeeze())
+                    min_dist, y_hat = torch.min(dists, 1)
+                    quantiles = []
+                    for idx_class in range(len(torch.stack(self.landmarks_unlabeled).squeeze())):
+                        if idx_class in y_hat:
+                            quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0))
+                        else:
+                            quantiles.append(torch.tensor(0.0, device=self.device))
+                    self.landmarks_unlabeled_q = torch.stack(quantiles)
 
     def update_labeled_landmarks(self, latent, labels, previous_landmarks, previous_landmarks_q, mask=None):
         with torch.no_grad():
@@ -376,6 +388,24 @@ class tranVAETrainer(Trainer):
             loss = loss.sum() / n_samples
             _, y_pred = torch.max(-distances, dim=1)
             accuracy = y_pred.eq(labels.squeeze()).float().mean()
+        elif self.loss_metric == "overlap" or self.loss_metric == "t":
+            id = torch.eye(len(landmarks), device=self.device)
+            truth_id = id[labels]
+            quantiles_view = self.landmarks_labeled_q.unsqueeze(0).expand(distances.size(0), distances.size(1))
+            overlap = torch.max(torch.zeros_like(distances), (quantiles_view - distances) / quantiles_view)
+            loss = torch.pow(truth_id - overlap, 2).sum(1).mean(0)
+            _, y_pred = torch.max(overlap, dim=1)
+            accuracy = y_pred.eq(labels.squeeze()).float().mean()
+        elif self.loss_metric == "seurat":
+            dists_t = 1 - (distances.T / distances.max(1)[0]).T
+            prob = 1 - torch.exp(-dists_t / 4)
+            prob = (prob.T / prob.sum(1)).T
+            loss = self.cross_entropy(prob, labels)
+            _, y_pred = torch.max(prob, dim=1)
+            accuracy = y_pred.eq(labels.squeeze()).float().mean()
+        else:
+            assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
+                          f"between 'dist','t' or 'seurat'!"
 
         return loss, accuracy
 
@@ -384,6 +414,15 @@ class tranVAETrainer(Trainer):
         min_dist, y_hat = torch.min(dists, 1)
         args_uniq = torch.unique(y_hat, sorted=True)
         args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
+
+        if update_q:
+            quantiles = []
+            for idx_class in range(len(landmarks)):
+                if idx_class in y_hat:
+                    quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0))
+                else:
+                    quantiles.append(torch.tensor(0.0, device=self.device))
+            self.landmarks_unlabeled_q = torch.stack(quantiles)
 
         if self.loss_metric == "dist":
             loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
@@ -394,6 +433,12 @@ class tranVAETrainer(Trainer):
             args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
             p = target_distribution(q)
             loss_val = kl_loss(q, p)
+        elif self.loss_metric == "overlap":
+            quantiles_view = self.landmarks_unlabeled_q.unsqueeze(0).expand(dists.size(0), dists.size(1))
+            overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists) / quantiles_view)
+            id = torch.eye(len(landmarks), device=self.device)
+            cross_entropy_dist = euclidean_dist(overlap, id)
+            loss_val = cross_entropy_dist.min(1)[0].mean(0)
         elif self.loss_metric == "seurat":
             dists_t = 1 - (dists.T / dists.max(1)[0]).T
             prob = 1 - torch.exp(-dists_t / 4)
@@ -405,15 +450,6 @@ class tranVAETrainer(Trainer):
             assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
                           f"between 'dist','t' or 'seurat'!"
 
-        if update_q:
-            quantiles = []
-            for idx_class in range(len(landmarks)):
-                if idx_class in y_hat:
-                    quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0))
-                else:
-                    quantiles.append(torch.tensor(0.0, device=self.device))
-            self.landmarks_unlabeled_q = torch.stack(quantiles)
-
         # Check if unlabeled landmark is close to labeled landmark
         if update_pos and self.tau != 0:
             landmark_dists = euclidean_dist(landmarks, self.landmarks_labeled)
@@ -422,7 +458,8 @@ class tranVAETrainer(Trainer):
                            self.landmarks_labeled_q.unsqueeze(0).expand(landmark_dists.size(0),
                                                                            landmark_dists.size(1))
 
-            overlap = torch.max(torch.zeros_like(landmark_dists), (quantile_sum - landmark_dists) / landmark_dists)
+            overlap = torch.max(torch.zeros_like(landmark_dists),
+                                (quantile_sum - landmark_dists) / (0.5 * quantile_sum))
             distance_loss = (landmark_dists * overlap).sum(1).mean(0)
             loss_val += self.tau * distance_loss
 
