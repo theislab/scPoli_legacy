@@ -222,6 +222,7 @@ class TRANVAE(BaseMixin):
             c: Optional[np.ndarray] = None,
             landmark=False,
             metric="exp",
+            threshold=0,
     ):
         device = next(self.model.parameters()).device
         if not landmark:
@@ -254,16 +255,21 @@ class TRANVAE(BaseMixin):
             probs += [prob.cpu().detach()]
 
         full_pred = np.array(torch.cat(preds))
+        full_prob = np.array(torch.cat(probs))
         inv_ct_encoder = {v: k for k, v in self.model.cell_type_encoder.items()}
         full_pred_names = []
 
-        for pred in full_pred:
+        for idx, pred in enumerate(full_pred):
             if landmark:
-                full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                if full_prob[idx] > threshold:
+                    full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                else:
+                    full_pred_names.append('Unknown')
             else:
-                full_pred_names.append(inv_ct_encoder[pred])
-
-        full_prob = np.array(torch.cat(probs))
+                if full_prob[idx] > threshold:
+                    full_pred_names.append(inv_ct_encoder[pred])
+                else:
+                    full_pred_names.append('Unknown')
 
         return np.array(full_pred_names), full_prob
 
@@ -288,8 +294,8 @@ class TRANVAE(BaseMixin):
         landmarks_l = self.landmarks_labeled_["mean"].detach().cpu().numpy()
         landmarks_u = self.landmarks_unlabeled_["mean"].detach().cpu().numpy()
 
-        l_pred, l_prob = self.classify(landmarks_l, landmark=True, metric=metric)
-        u_pred, u_prob = self.check_for_unseen(threshold=threshold)
+        l_pred, l_prob = self.classify(landmarks_l, landmark=True, metric=metric, threshold=threshold)
+        u_pred, u_prob = self.classify(landmarks_u, landmark=True, metric=metric, threshold=threshold)
         x_info = np.concatenate((landmarks_l, landmarks_u))
         label_info = np.concatenate((l_pred, u_pred))
         prob_info = np.concatenate((np.ones_like(l_pred), u_prob))

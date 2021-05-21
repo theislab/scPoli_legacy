@@ -23,8 +23,8 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-plot_figures = False
-class_metric = "seurat"
+plot_figures = True
+class_metric = "dist"
 experiment = "pancreas"
 unlabeled_strat = "ct"
 test_nr = 3
@@ -128,7 +128,7 @@ labels = ['Correct', 'Incorrect']
 set_axis_style(ax, labels)
 plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/uncertainty.png'), bbox_inches='tight')
 
-x,y,c,p = tranvae.get_landmarks_info(metric=class_metric)
+x,y,c,p = tranvae.get_landmarks_info(metric=class_metric, threshold=0.5)
 print(p)
 print(y)
 

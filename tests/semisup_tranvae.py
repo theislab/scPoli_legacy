@@ -36,12 +36,12 @@ use_mmd = False
 tranvae_epochs = 500
 pretraining_epochs = 200
 alpha_epoch_anneal = 100
-eta = 100
-tau = 1
+eta = 10
+tau = 2000
 clustering_res = 2
-labeled_loss_metric = "seurat"
-unlabeled_loss_metric = "seurat"
-class_metric = "seurat"
+labeled_loss_metric = "dist"
+unlabeled_loss_metric = "dist"
+class_metric = "dist"
 
 
 early_stopping_kwargs = {
