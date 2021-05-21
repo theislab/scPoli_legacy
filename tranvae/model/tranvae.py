@@ -50,7 +50,7 @@ class tranVAE(trVAE):
             weighted_distances = F.softmax(-dists, dim=1)
             probs, preds = torch.max(weighted_distances, dim=1)
         elif metric == "seurat":
-            dists_t = 1 - (dists.T / dists.sum(1)).T
+            dists_t = 1 - (dists.T / dists.max(1)[0]).T
             prob = 1 - torch.exp(-dists_t / 4)
             prob = (prob.T / prob.sum(1)).T
             probs, preds = torch.max(prob, dim=1)

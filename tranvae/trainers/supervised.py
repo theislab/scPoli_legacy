@@ -368,15 +368,14 @@ class tranVAETrainer(Trainer):
         unique_labels = torch.unique(labels, sorted=True)
         distances = euclidean_dist(latent, landmarks)
         loss = None
-        for value in unique_labels:
-            indices = labels.eq(value).nonzero(as_tuple=False)
-            label_loss = distances[indices, value].sum(0)
-            loss = torch.cat([loss, label_loss]) if loss is not None else label_loss
-        loss = loss.sum() / n_samples
-
-        _, y_pred = torch.max(-distances, dim=1)
-
-        accuracy = y_pred.eq(labels.squeeze()).float().mean()
+        if self.loss_metric == "dist":
+            for value in unique_labels:
+                indices = labels.eq(value).nonzero(as_tuple=False)
+                label_loss = distances[indices, value].sum(0)
+                loss = torch.cat([loss, label_loss]) if loss is not None else label_loss
+            loss = loss.sum() / n_samples
+            _, y_pred = torch.max(-distances, dim=1)
+            accuracy = y_pred.eq(labels.squeeze()).float().mean()
 
         return loss, accuracy
 
@@ -396,10 +395,12 @@ class tranVAETrainer(Trainer):
             p = target_distribution(q)
             loss_val = kl_loss(q, p)
         elif self.loss_metric == "seurat":
-            dists_t = 1 - (dists.T / dists.sum(1)).T
-            prob = 1 - torch.exp(-dists_t / (2/self.std)**2)
+            dists_t = 1 - (dists.T / dists.max(1)[0]).T
+            prob = 1 - torch.exp(-dists_t / 4)
             prob = (prob.T / prob.sum(1)).T
-            loss_val = (dists * prob).sum(1).mean(0)
+            id = torch.eye(len(landmarks), device=self.device)
+            cross_entropy_dist = euclidean_dist(prob, id)
+            loss_val = cross_entropy_dist.min(1)[0].mean(0)
         else:
             assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
                           f"between 'dist','t' or 'seurat'!"
@@ -415,29 +416,14 @@ class tranVAETrainer(Trainer):
 
         # Check if unlabeled landmark is close to labeled landmark
         if update_pos and self.tau != 0:
-            results = []
-            for idx in range(len(landmarks)):
-                unlabeled_result = []
-                unlabeled_landmark_interval = torch.stack(
-                    (landmarks[idx, :] - self.landmarks_unlabeled_var[idx, :],
-                     landmarks[idx, :] + self.landmarks_unlabeled_var[idx, :])
-                )
-                for cell_type in range(len(self.landmarks_labeled)):
-                    labeled_landmark_interval = torch.stack(
-                        (self.landmarks_labeled[cell_type, :] - self.landmarks_labeled_var[cell_type, :],
-                         self.landmarks_labeled[cell_type, :] + self.landmarks_labeled_var[cell_type, :])
-                    )
-                    prob = get_overlap(unlabeled_landmark_interval, labeled_landmark_interval)
-                    unlabeled_result.append(prob)
-                results.append(unlabeled_result)
-            results = torch.tensor(results, device=landmarks.device)
-            probs, preds = torch.max(results, dim=1)
+            landmark_dists = euclidean_dist(landmarks, self.landmarks_labeled)
+            quantile_sum = self.landmarks_unlabeled_q.unsqueeze(1).expand(landmark_dists.size(0),
+                                                                             landmark_dists.size(1)) + \
+                           self.landmarks_labeled_q.unsqueeze(0).expand(landmark_dists.size(0),
+                                                                           landmark_dists.size(1))
 
-            l_dists = torch.tensor(0, device=self.device, dtype=torch.float64)
-            for l_idx, l_prob in enumerate(probs):
-                if l_prob > 0.5:
-                    l_dists += torch.pow(landmarks[l_idx, :] - self.landmarks_labeled[preds[l_idx], :], 2).mean(0)
-
-            loss_val += self.tau * l_dists
+            overlap = torch.max(torch.zeros_like(landmark_dists), (quantile_sum - landmark_dists) / landmark_dists)
+            distance_loss = (landmark_dists * overlap).sum(1).mean(0)
+            loss_val += self.tau * distance_loss
 
         return loss_val, args_count

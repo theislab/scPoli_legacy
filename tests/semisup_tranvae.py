@@ -36,11 +36,11 @@ use_mmd = False
 tranvae_epochs = 500
 pretraining_epochs = 200
 alpha_epoch_anneal = 100
-eta = 1000
+eta = 100
 tau = 0
 clustering_res = 2
-loss_metric = "t"
-class_metric = "overlap"
+loss_metric = "dist"
+class_metric = "seurat"
 
 
 early_stopping_kwargs = {
@@ -167,7 +167,7 @@ sc.pl.umap(adata_latent,
            )
 plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/umap_tranvae.png'), bbox_inches='tight')
 
-preds, probs = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric="seurat")
+preds, probs = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric=class_metric)
 print('Distance Classifier:', np.mean(preds == unlabeled_adata.obs[cell_type_key]))
 text_file = open(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/acc_report.txt'), "w")
 n = text_file.write(classification_report(y_true=unlabeled_adata.obs[cell_type_key], y_pred=preds))
