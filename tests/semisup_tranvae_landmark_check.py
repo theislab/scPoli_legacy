@@ -24,7 +24,7 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 plot_figures = False
-class_metric = "overlap"
+class_metric = "seurat"
 experiment = "pancreas"
 unlabeled_strat = "ct"
 test_nr = 3

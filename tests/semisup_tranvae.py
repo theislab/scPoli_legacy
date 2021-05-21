@@ -34,13 +34,14 @@ use_mmd = False
 
 # Training Params
 tranvae_epochs = 500
-pretraining_epochs = 0
+pretraining_epochs = 200
 alpha_epoch_anneal = 100
-eta = 10000
-tau = 0
+eta = 100
+tau = 1
 clustering_res = 2
-loss_metric = "overlap"
-class_metric = "overlap"
+labeled_loss_metric = "seurat"
+unlabeled_loss_metric = "seurat"
+class_metric = "seurat"
 
 
 early_stopping_kwargs = {
@@ -146,7 +147,8 @@ tranvae.train(
     eta=eta,
     tau=tau,
     clustering_res=clustering_res,
-    loss_metric=loss_metric
+    labeled_loss_metric=labeled_loss_metric,
+    unlabeled_loss_metric=unlabeled_loss_metric
 )
 ref_time = time.time() - ref_time
 ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/model')
