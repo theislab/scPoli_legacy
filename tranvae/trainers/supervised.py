@@ -87,7 +87,6 @@ class tranVAETrainer(Trainer):
         self.clustering_res = clustering_res
         self.pretraining_epochs = pretraining_epochs
         self.use_early_stopping_orig = self.use_early_stopping
-        self.reload_best = False
         self.quantile = 0.95
         self.cross_entropy = NLLLoss()
 
@@ -95,6 +94,10 @@ class tranVAETrainer(Trainer):
         self.landmarks_labeled_q = None
         self.landmarks_unlabeled = None
         self.landmarks_unlabeled_q = None
+        self.best_landmarks_labeled = None
+        self.best_landmarks_labeled_q = None
+        self.best_landmarks_unlabeled = None
+        self.best_landmarks_unlabeled_q = None
         self.n_labeled = self.model.n_cell_types
         self.lndmk_optim = None
 
@@ -140,6 +143,11 @@ class tranVAETrainer(Trainer):
             self.use_early_stopping = False
         if self.use_early_stopping_orig and self.epoch >= self.pretraining_epochs:
             self.use_early_stopping = True
+        if self.epoch >= self.pretraining_epochs and self.epoch - 1 == self.best_epoch:
+            self.best_landmarks_labeled = self.landmarks_labeled
+            self.best_landmarks_labeled_q = self.landmarks_labeled_q
+            self.best_landmarks_unlabeled = self.landmarks_unlabeled
+            self.best_landmarks_unlabeled_q = self.landmarks_unlabeled_q
 
     def get_latent_train(self):
         latents = []
@@ -231,11 +239,16 @@ class tranVAETrainer(Trainer):
                 for landmk in self.landmarks_unlabeled:
                     landmk.requires_grad = False
 
-
         self.model.train()
         super().on_epoch_end()
 
     def after_loop(self):
+        if self.best_state_dict is not None and self.reload_best:
+            self.landmarks_labeled = self.best_landmarks_labeled
+            self.landmarks_labeled_q = self.best_landmarks_labeled_q
+            self.landmarks_unlabeled = self.best_landmarks_unlabeled
+            self.landmarks_unlabeled_q = self.best_landmarks_unlabeled_q
+
         label_categories = self.train_data.labeled_vector.unique().tolist()
         if 0 in label_categories:
             latent = self.get_latent_train()

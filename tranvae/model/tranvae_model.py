@@ -264,7 +264,7 @@ class TRANVAE(BaseMixin):
                 if full_prob[idx] > threshold:
                     full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
                 else:
-                    full_pred_names.append('Unknown')
+                    full_pred_names.append(f"Unknown Landmark {idx}")
             else:
                 if full_prob[idx] > threshold:
                     full_pred_names.append(inv_ct_encoder[pred])
@@ -290,15 +290,33 @@ class TRANVAE(BaseMixin):
             print("There are no unlabeled Landmarks in the model.")
             return None, None
 
+    def add_new_cell_type(self, cell_type_name, landmarks):
+        """
+
+        Parameters
+        ----------
+        cell_type_name: str
+            Name of the new cell type
+        landmarks: list
+            List of indices of the unlabeled landmarks that correspond to the new cell type
+
+        Returns
+        -------
+
+        """
+        self.model.add_new_cell_type(cell_type_name, landmarks)
+        self.landmarks_labeled_ = self.model.landmarks_labeled
+        self.landmarks_unlabeled_ = self.model.landmarks_unlabeled
+
     def get_landmarks_info(self, metric="dist", threshold=0):
         landmarks_l = self.landmarks_labeled_["mean"].detach().cpu().numpy()
         landmarks_u = self.landmarks_unlabeled_["mean"].detach().cpu().numpy()
 
-        l_pred, l_prob = self.classify(landmarks_l, landmark=True, metric=metric, threshold=threshold)
+        l_pred, l_prob = self.classify(landmarks_l, landmark=True, metric=metric, threshold=0)
         u_pred, u_prob = self.classify(landmarks_u, landmark=True, metric=metric, threshold=threshold)
         x_info = np.concatenate((landmarks_l, landmarks_u))
         label_info = np.concatenate((l_pred, u_pred))
-        prob_info = np.concatenate((np.ones_like(l_pred), u_prob))
+        prob_info = np.concatenate((np.ones_like(l_prob), u_prob))
         batch_info = np.array((landmarks_l.shape[0] * ['Landmark Labeled'] +
                                landmarks_u.shape[0] * ['Landmark Unlabeled']))
         return x_info, label_info, batch_info, prob_info

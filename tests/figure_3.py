@@ -23,10 +23,10 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-experiment = "pancreas"
+experiment = "pbmc"
 unlabeled_strat = "ct"
 test_nr = 3
-cells_per_ct = 2000
+cells_per_ct = 500
 
 # Model Params
 latent_dim = 20
@@ -36,7 +36,7 @@ use_mmd = False
 tranvae_epochs = 500
 pretraining_epochs = 200
 alpha_epoch_anneal = 100
-eta = 1
+eta = 10
 tau = 0
 clustering_res = 2
 labeled_loss_metric = "dist"
@@ -45,7 +45,7 @@ class_metric = "dist"
 
 
 early_stopping_kwargs = {
-    "early_stopping_metric": "val_accuracy",
+    "early_stopping_metric": "val_classifier_loss",
     "mode": "max",
     "threshold": 0,
     "patience": 20,
@@ -54,26 +54,6 @@ early_stopping_kwargs = {
     "lr_factor": 0.1,
 }
 
-
-if experiment == "pancreas":
-    adata_all = sc.read(os.path.expanduser(f'~/Documents/benchmarking_datasets/pancreas_normalized.h5ad'))
-    condition_key = "study"
-    cell_type_key = "cell_type"
-    if test_nr == 1:
-        reference = ['Pancreas inDrop']
-        query = ['Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
-    elif test_nr == 2:
-        reference = ['Pancreas inDrop', 'Pancreas SS2']
-        query = ['Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
-    elif test_nr == 3:
-        reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2']
-        query = ['Pancreas CelSeq', 'Pancreas Fluidigm C1']
-    elif test_nr == 4:
-        reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq']
-        query = ['Pancreas Fluidigm C1']
-    elif test_nr == 5:
-        reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
-        query = []
 if experiment == "pbmc":
     adata_all = sc.read(os.path.expanduser(
         f'~/Documents/benchmarking_datasets/Immune_ALL_human_wo_villani_rqr_normalized_hvg.h5ad'))
@@ -91,39 +71,23 @@ if experiment == "pbmc":
     elif test_nr == 4:
         reference = ['10X', 'Oetjen', 'Sun', 'Freytag']
         query = []
-if experiment == "brain":
-    adata_all = sc.read(
-        os.path.expanduser(f'~/Documents/benchmarking_datasets/mouse_brain_subsampled_normalized_hvg.h5ad'))
-    condition_key = "study"
-    cell_type_key = "cell_type"
-    if test_nr == 1:
-        reference = ['Rosenberg']
-        query = ['Saunders', 'Zeisel', 'Tabula_muris']
-    elif test_nr == 2:
-        reference = ['Rosenberg', 'Saunders']
-        query = ['Zeisel', 'Tabula_muris']
-    elif test_nr == 3:
-        reference = ['Rosenberg', 'Saunders', 'Zeisel']
-        query = ['Tabula_muris']
-    elif test_nr == 4:
-        reference = ['Rosenberg', 'Saunders', 'Zeisel', 'Tabula_muris']
-        query = []
 
 adata = adata_all.raw.to_adata()
 adata = remove_sparsity(adata)
 
 indices = np.arange(len(adata))
-if unlabeled_strat == "batch":
-    labeled_ind = indices[adata.obs.study.isin(reference)].tolist()
-    labeled_adata = adata[adata.obs.study.isin(reference)].copy()
-    unlabeled_adata = adata[adata.obs.study.isin(query)].copy()
+
 if unlabeled_strat == "ct":
     labeled_ind = []
     cts = adata.obs[cell_type_key].unique().tolist()
     for celltype in cts:
         ct_indices = indices[adata.obs[cell_type_key].isin([celltype])]
-        ct_sel_ind = np.random.choice(ct_indices, size=cells_per_ct, replace=False)
-        labeled_ind += ct_sel_ind.tolist()
+        if cells_per_ct <= len(ct_indices):
+            ct_sel_ind = np.random.choice(ct_indices, size=cells_per_ct, replace=False)
+            labeled_ind += ct_sel_ind.tolist()
+        else:
+            ct_sel_ind = ct_indices
+            labeled_ind += ct_sel_ind.tolist()
         print(celltype, len(ct_indices), len(ct_sel_ind), len(labeled_ind))
     unlabeled_ind = np.delete(indices, labeled_ind).tolist()
     labeled_adata = adata[labeled_ind].copy()
@@ -151,7 +115,7 @@ tranvae.train(
     unlabeled_loss_metric=unlabeled_loss_metric
 )
 ref_time = time.time() - ref_time
-ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/model')
+ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_model')
 tranvae.save(ref_path, overwrite=True)
 
 adata_latent = sc.AnnData(tranvae.get_latent())
@@ -167,14 +131,14 @@ sc.pl.umap(adata_latent,
            wspace=0.6,
            show=False
            )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/umap_tranvae.png'), bbox_inches='tight')
+plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_umap_tranvae.png'), bbox_inches='tight')
 
 preds, probs = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric=class_metric)
 print('Distance Classifier:', np.mean(preds == unlabeled_adata.obs[cell_type_key]))
-text_file = open(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/acc_report.txt'), "w")
+text_file = open(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_acc_report.txt'), "w")
 n = text_file.write(classification_report(y_true=unlabeled_adata.obs[cell_type_key], y_pred=preds))
 text_file.close()
-text_file_t = open(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/runtime.txt'), "w")
+text_file_t = open(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_runtime.txt'), "w")
 m = text_file_t.write(str(ref_time))
 text_file_t.close()
 
@@ -187,7 +151,7 @@ ax.set_ylabel('Observed values')
 ax.violinplot(data)
 labels = ['Correct', 'Incorrect']
 set_axis_style(ax, labels)
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/uncertainty.png'), bbox_inches='tight')
+plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_uncertainty.png'), bbox_inches='tight')
 
 x,y,c,p = tranvae.get_landmarks_info(metric=class_metric, threshold=0.5)
 print(p)
@@ -216,7 +180,7 @@ sc.pl.umap(adata_latent,
            size=50,
            show=False
            )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/umap_full_tranvae_batch_l.png'),
+plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_umap_full_tranvae_batch_l.png'),
             bbox_inches='tight')
 
 sc.pl.umap(adata_latent,
@@ -227,7 +191,7 @@ sc.pl.umap(adata_latent,
            size=50,
            show=False
            )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/umap_full_tranvae_ct_l.png'),
+plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_umap_full_tranvae_ct_l.png'),
             bbox_inches='tight')
 
 sc.pl.umap(adata_latent,
@@ -237,7 +201,7 @@ sc.pl.umap(adata_latent,
            wspace=0.6,
            show=False
            )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/umap_full_tranvae_ct.png'),
+plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_umap_full_tranvae_ct.png'),
             bbox_inches='tight')
 
 sc.pl.umap(adata_latent,
@@ -247,5 +211,5 @@ sc.pl.umap(adata_latent,
            wspace=0.6,
            show=False
            )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/{experiment}_semi/umap_full_tranvae_pred.png'),
+plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_3/{cells_per_ct}_umap_full_tranvae_pred.png'),
             bbox_inches='tight')

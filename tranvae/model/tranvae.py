@@ -38,6 +38,24 @@ class tranVAE(trVAE):
             for idx in range(self.n_cell_types - len(self.landmarks_labeled["mean"])):
                 self.new_landmarks.append(len(self.landmarks_labeled["mean"]) + idx)
 
+    def add_new_cell_type(self, cell_type_name, landmarks):
+        self.cell_types.append(cell_type_name)
+        self.n_cell_types += 1
+        self.cell_type_encoder = {k: v for k, v in zip(self.cell_types, range(len(self.cell_types)))}
+        new_landmark = self.landmarks_unlabeled["mean"][landmarks].mean(0).unsqueeze(0)
+        new_landmark_q = torch.tensor(
+            1.0,
+            device=self.landmarks_unlabeled["q"].device, requires_grad=False
+        ).unsqueeze(0)
+        self.landmarks_labeled["mean"] = torch.cat(
+            (self.landmarks_labeled["mean"], new_landmark),
+            dim=0
+        )
+        self.landmarks_labeled["q"] = torch.cat(
+            (self.landmarks_labeled["q"], new_landmark_q),
+            dim=0
+        )
+
     def classify(self, x, c=None, landmark=False, metric="dist"):
         if landmark:
             latent = x
