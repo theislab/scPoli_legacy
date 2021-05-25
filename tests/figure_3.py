@@ -26,7 +26,7 @@ def set_axis_style(ax, labels):
 experiment = "pbmc"
 unlabeled_strat = "ct"
 test_nr = 3
-cells_per_ct = 500
+cells_per_ct = 50
 
 # Model Params
 latent_dim = 20
@@ -46,7 +46,7 @@ class_metric = "dist"
 
 early_stopping_kwargs = {
     "early_stopping_metric": "val_classifier_loss",
-    "mode": "max",
+    "mode": "min",
     "threshold": 0,
     "patience": 20,
     "reduce_lr": True,
