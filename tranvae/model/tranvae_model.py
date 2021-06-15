@@ -238,9 +238,9 @@ class TRANVAE(BaseMixin):
                 labels = np.zeros(c.shape[0])
                 for condition, label in self.model.condition_encoder.items():
                     labels[c == condition] = label
-                c = torch.tensor(labels, device=device)
+                c = torch.tensor(labels, device='cpu')
 
-        x = torch.tensor(x, device=device)
+        x = torch.tensor(x, device='cpu')
 
         preds = []
         probs = []
@@ -248,9 +248,17 @@ class TRANVAE(BaseMixin):
         subsampled_indices = indices.split(512)
         for batch in subsampled_indices:
             if landmark:
-                pred, prob = self.model.classify(x[batch, :], landmark=landmark, metric=metric)
+                pred, prob = self.model.classify(
+                    x[batch, :].to(device),
+                    landmark=landmark,
+                    metric=metric)
             else:
-                pred, prob = self.model.classify(x[batch, :], c[batch], landmark=landmark, metric=metric)
+                pred, prob = self.model.classify(
+                    x[batch, :].to(device),
+                    c[batch].to(device),
+                    landmark=landmark,
+                    metric=metric
+                )
             preds += [pred.cpu().detach()]
             probs += [prob.cpu().detach()]
 
