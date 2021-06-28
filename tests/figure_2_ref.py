@@ -23,7 +23,7 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-experiments = ["scvelo","pbmc"]
+experiments = ["tumor"]
 test_nrs = [10]
 
 # Model Params
@@ -93,8 +93,8 @@ for experiment in experiments:
                 reference = ['Oetjen', '10X', 'Sun', 'Freytag']
                 query = []
             elif test_nr == 10:
-                reference = ['Oetjen', '10X']
-                query = ['Sun', 'Freytag']
+                reference = ['Oetjen', '10X', 'Sun']
+                query = ['Freytag']
         if experiment == "brain":
             adata = sc.read(
                 os.path.expanduser(f'~/Documents/benchmarking_datasets/benchmark_brain_shrinked.h5ad'))
@@ -143,6 +143,14 @@ for experiment in experiments:
             elif test_nr == 10:
                 reference = ['Dropseq_transplant', '10x_Biopsy']
                 query = ['10x_Transplant']
+        if experiment == "tumor":
+            adata = sc.read(
+                os.path.expanduser(f'~/Documents/benchmarking_datasets/benchmark_tumor_shrinked.h5ad'))
+            condition_key = "study"
+            if test_nr == 10:
+                reference = ['breast', 'colorectal', 'liver2', 'liver1', 'lung1', 'lung2', 'multiple', 'ovary',
+                             'pancreas', 'skin']
+                query = ['melanoma1', 'melanoma2', 'uveal melanoma']
 
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
