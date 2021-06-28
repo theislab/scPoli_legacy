@@ -1,8 +1,8 @@
 
-TranVAE - single-cell semi-supervised model for architecture surgery
+Label transfer and analyzing query datata (LATAQ)
 =========================================================================
 .. raw:: html
-TranVAE is a package for semi-supervised learning on single cell data. It is compatible with architecture surgery.
+LATAQ is a package for semi-supervised learning on single cell data. It is compatible with architecture surgery.
 
 More to come here...
 
