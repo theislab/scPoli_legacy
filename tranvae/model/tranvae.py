@@ -6,7 +6,9 @@ import numpy as np
 
 from scarches.models.trvae.trvae import trVAE
 from scarches.models.trvae.losses import mse, mmd, zinb, nb
-from scarches.models.trvae._utils import one_hot_encoder, euclidean_dist
+from scarches.models.trvae._utils import one_hot_encoder
+
+from ._utils import euclidean_dist
 
 
 class tranVAE(trVAE):
@@ -14,69 +16,95 @@ class tranVAE(trVAE):
                  input_dim: int,
                  conditions: list,
                  cell_types: list,
-                 landmarks_labeled: Optional[list] = None,
-                 landmarks_normalize: Optional[np.ndarray] = None,
-                 landmarks_unlabeled: Optional[np.ndarray] = None,
+                 landmarks_labeled: Optional[dict] = None,
+                 landmarks_unlabeled: Optional[dict] = None,
                  **trvae_kwargs,
                  ):
         super().__init__(
             input_dim,
             conditions,
             **trvae_kwargs)
+
         self.n_cell_types = len(cell_types)
         self.cell_types = cell_types
         self.cell_type_encoder = {k: v for k, v in zip(cell_types, range(len(cell_types)))}
-        self.landmarks_labeled = landmarks_labeled
-        self.landmarks_normalize = landmarks_normalize
-        self.landmarks_unlabeled = landmarks_unlabeled
+        self.landmarks_labeled = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
+        self.landmarks_unlabeled = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
         self.new_landmarks = None
 
-        if landmarks_labeled is not None:
+        if self.landmarks_labeled["mean"] is not None:
             # Save indices of possible new landmarks to train
             self.new_landmarks = []
-            for idx in range(self.n_cell_types - len(landmarks_labeled)):
-                self.new_landmarks.append(len(landmarks_labeled) + idx)
+            for idx in range(self.n_cell_types - len(self.landmarks_labeled["mean"])):
+                self.new_landmarks.append(len(self.landmarks_labeled["mean"]) + idx)
 
-        if landmarks_normalize is not None:
-            self.landmarks_normalize = torch.tensor(self.landmarks_normalize)
+    def add_new_cell_type(self, cell_type_name, landmarks):
+        self.cell_types.append(cell_type_name)
+        self.n_cell_types += 1
+        self.cell_type_encoder = {k: v for k, v in zip(self.cell_types, range(len(self.cell_types)))}
+        new_landmark = self.landmarks_unlabeled["mean"][landmarks].mean(0).unsqueeze(0)
+        new_landmark_q = torch.tensor(
+            1.0,
+            device=self.landmarks_unlabeled["q"].device, requires_grad=False
+        ).unsqueeze(0)
+        self.landmarks_labeled["mean"] = torch.cat(
+            (self.landmarks_labeled["mean"], new_landmark),
+            dim=0
+        )
+        self.landmarks_labeled["q"] = torch.cat(
+            (self.landmarks_labeled["q"], new_landmark_q),
+            dim=0
+        )
 
-        if landmarks_unlabeled is not None:
-            self.landmarks_unlabeled = torch.tensor(self.landmarks_unlabeled)
-
-    def get_prob_matrix(self, data):
-        # Returns (N-batch x N-cell-types)-matrix with probabilities
-        results = []
-        for idx, landmark in enumerate(self.landmarks_labeled):
-            unn_probs = landmark.log_prob(data.cpu()).exp()
-            result = unn_probs / self.landmarks_normalize[idx].cpu()
-            result = torch.mean(result, dim=1)
-            results.append(result)
-        results = torch.stack(results).transpose(0, 1)
-
-        return results
-
-    def classify(self, x, c=None, landmark=False, version='prob'):
+    def classify(self, x, c=None, landmark=False, metric="dist"):
         if landmark:
             latent = x
         else:
             latent = self.get_latent(x,c)
 
-        if version == 'prob':
-            results = self.get_prob_matrix(latent)
-            probs, preds = torch.max(results, dim=1)
-        elif version == 'dist':
-            landmarks_means = []
-            for landmark in self.landmarks_labeled:
-                landmarks_means.append(landmark.mean)
-            landmarks_labeled_mean = torch.stack(landmarks_means)
-            landmarks_labeled_mean = landmarks_labeled_mean.to(latent.device)
-            distances = euclidean_dist(latent, landmarks_labeled_mean)
-            probs, preds = torch.max(-distances, dim=1)
+        dists = euclidean_dist(latent, self.landmarks_labeled["mean"])
+
+        if metric == "dist":
+            weighted_distances = F.softmax(-dists, dim=1)
+            probs, preds = torch.max(weighted_distances, dim=1)
+        elif metric == "seurat":
+            dists_t = 1 - (dists.T / dists.max(1)[0]).T
+            prob = 1 - torch.exp(-dists_t / 4)
+            prob = (prob.T / prob.sum(1)).T
+            probs, preds = torch.max(prob, dim=1)
+        elif metric == "overlap":
+            quantiles_view = self.landmarks_labeled["q"].unsqueeze(0).expand(dists.size(0), dists.size(1))
+
+            #overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
+            #overlap = 1 - (quantiles_view - overlap / quantiles_view)
+
+            overlap = dists / quantiles_view
+            overlap = (overlap.T / overlap.max(1)[0]).T
+            overlap = 1 - overlap
+
+            overlap = (overlap.T / overlap.sum(1)).T
+            probs, preds = torch.max(overlap, dim=1)
+        else:
+            assert False, f"'{metric}' is not a available as a loss function please choose " \
+                          f"between 'exp', 'var' or 'seurat'!"
+
         return preds, probs
 
     def check_for_unseen(self):
-        results = self.get_prob_matrix(self.landmarks_unlabeled)
-        probs, preds = torch.max(results, dim=1)
+        landmark_dists = euclidean_dist(self.landmarks_unlabeled["mean"], self.landmarks_labeled["mean"])
+        quantile_sum = self.landmarks_unlabeled["q"].unsqueeze(1).expand(landmark_dists.size(0),
+                                                                         landmark_dists.size(1)) + \
+                       self.landmarks_labeled["q"].unsqueeze(0).expand(landmark_dists.size(0),
+                                                                       landmark_dists.size(1))
+
+        #overlap = torch.max(torch.zeros_like(landmark_dists), (quantile_sum - landmark_dists)/landmark_dists)
+        #overlap = torch.nan_to_num((overlap.T / overlap.sum(1))).T
+
+        overlap = landmark_dists / quantile_sum
+        overlap = (overlap.T / overlap.max(1)[0]).T
+        overlap = 1 - overlap
+        overlap = (overlap.T / overlap.sum(1)).T
+        probs, preds = torch.max(overlap, dim=1)
         return preds, probs
 
     def forward(self, x=None, batch=None, sizefactor=None, celltype=None, labeled=None):

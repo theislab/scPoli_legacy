@@ -53,12 +53,8 @@ class TRANVAE(BaseMixin):
         cell_type_key: str = None,
         cell_types: Optional[list] = None,
         labeled_indices: Optional[list] = None,
-        n_clusters: Optional[int] = None,
-        clustering: Optional[str] = None,
-        use_unlabeled_loss: Optional[bool] = True,
-        landmarks_labeled: Optional[list] = None,
-        landmarks_normalize: Optional[list] = None,
-        landmarks_unlabeled: Optional[np.ndarray] = None,
+        landmarks_labeled: Optional[dict] = None,
+        landmarks_unlabeled: Optional[dict] = None,
         hidden_layer_sizes: list = [256, 64],
         latent_dim: int = 10,
         dr_rate: float = 0.05,
@@ -108,16 +104,14 @@ class TRANVAE(BaseMixin):
         self.use_ln_ = use_ln
 
         self.input_dim_ = adata.n_vars
-        self.landmarks_labeled_ = landmarks_labeled
-        self.landmarks_normalize_ = landmarks_normalize
-        self.landmarks_unlabeled_ = landmarks_unlabeled
+        self.landmarks_labeled_ = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
+        self.landmarks_unlabeled_ = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
 
         self.model = tranVAE(
             input_dim=self.input_dim_,
             conditions=self.conditions_,
             cell_types=self.cell_types_,
             landmarks_labeled=self.landmarks_labeled_,
-            landmarks_normalize=self.landmarks_normalize_,
             landmarks_unlabeled=self.landmarks_unlabeled_,
             hidden_layer_sizes=self.hidden_layer_sizes_,
             latent_dim=self.latent_dim_,
@@ -130,10 +124,13 @@ class TRANVAE(BaseMixin):
             use_bn=self.use_bn_,
             use_ln=self.use_ln_,
         )
+        if self.landmarks_labeled_["mean"] is not None:
+            self.landmarks_labeled_["mean"] = self.landmarks_labeled_["mean"].to(next(self.model.parameters()).device)
+            self.landmarks_labeled_["q"] = self.landmarks_labeled_["q"].to(next(self.model.parameters()).device)
+        if self.landmarks_unlabeled_["mean"] is not None:
+            self.landmarks_unlabeled_["mean"] = self.landmarks_unlabeled_["mean"].to(next(self.model.parameters()).device)
+            self.landmarks_unlabeled_["q"] = self.landmarks_unlabeled_["q"].to(next(self.model.parameters()).device)
 
-        self.n_clusters_ = n_clusters
-        self.clustering_ = clustering
-        self.use_unlabeled_loss_ = use_unlabeled_loss
         self.is_trained_ = False
 
         self.trainer = None
@@ -161,9 +158,6 @@ class TRANVAE(BaseMixin):
         self.trainer = tranVAETrainer(
             self.model,
             self.adata,
-            n_clusters=self.n_clusters_,
-            clustering=self.clustering_,
-            use_unlabeled_loss=self.use_unlabeled_loss_,
             labeled_indices=self.labeled_indices_,
             condition_key=self.condition_key_,
             cell_type_key=self.cell_type_key_,
@@ -171,10 +165,7 @@ class TRANVAE(BaseMixin):
         self.trainer.train(n_epochs, lr, eps)
         self.is_trained_ = True
         self.landmarks_labeled_ = self.model.landmarks_labeled
-        self.landmarks_normalize_ = \
-            self.model.landmarks_normalize.cpu().detach().numpy() if self.model.landmarks_normalize is not None else None
-        self.landmarks_unlabeled_ = \
-            self.model.landmarks_unlabeled.cpu().numpy() if self.model.landmarks_unlabeled is not None else None
+        self.landmarks_unlabeled_ = self.model.landmarks_unlabeled
 
     def get_latent(
         self,
@@ -212,15 +203,15 @@ class TRANVAE(BaseMixin):
             labels = np.zeros(c.shape[0])
             for condition, label in self.model.condition_encoder.items():
                 labels[c == condition] = label
-            c = torch.tensor(labels, device=device)
+            c = torch.tensor(labels, device='cpu')
 
-        x = torch.tensor(x, device=device)
+        x = torch.tensor(x, device='cpu')
 
         latents = []
-        indices = torch.arange(x.size(0), device=device)
+        indices = torch.arange(x.size(0), device='cpu')
         subsampled_indices = indices.split(512)
         for batch in subsampled_indices:
-            latent = self.model.get_latent(x[batch,:], c[batch], mean)
+            latent = self.model.get_latent(x[batch,:].to(device), c[batch].to(device), mean)
             latents += [latent.cpu().detach()]
 
         return np.array(torch.cat(latents))
@@ -230,7 +221,8 @@ class TRANVAE(BaseMixin):
             x: Optional[np.ndarray] = None,
             c: Optional[np.ndarray] = None,
             landmark=False,
-            version='prob',
+            metric="exp",
+            threshold=0,
     ):
         device = next(self.model.parameters()).device
         if not landmark:
@@ -246,9 +238,9 @@ class TRANVAE(BaseMixin):
                 labels = np.zeros(c.shape[0])
                 for condition, label in self.model.condition_encoder.items():
                     labels[c == condition] = label
-                c = torch.tensor(labels, device=device)
+                c = torch.tensor(labels, device='cpu')
 
-        x = torch.tensor(x, device=device)
+        x = torch.tensor(x, device='cpu')
 
         preds = []
         probs = []
@@ -256,56 +248,83 @@ class TRANVAE(BaseMixin):
         subsampled_indices = indices.split(512)
         for batch in subsampled_indices:
             if landmark:
-                pred, prob = self.model.classify(x[batch, :], landmark=landmark, version=version)
+                pred, prob = self.model.classify(
+                    x[batch, :].to(device),
+                    landmark=landmark,
+                    metric=metric)
             else:
-                pred, prob = self.model.classify(x[batch, :], c[batch], landmark=landmark, version=version)
+                pred, prob = self.model.classify(
+                    x[batch, :].to(device),
+                    c[batch].to(device),
+                    landmark=landmark,
+                    metric=metric
+                )
             preds += [pred.cpu().detach()]
             probs += [prob.cpu().detach()]
 
         full_pred = np.array(torch.cat(preds))
+        full_prob = np.array(torch.cat(probs))
         inv_ct_encoder = {v: k for k, v in self.model.cell_type_encoder.items()}
         full_pred_names = []
 
-        for pred in full_pred:
+        for idx, pred in enumerate(full_pred):
             if landmark:
-                full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                if full_prob[idx] > threshold:
+                    full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                else:
+                    full_pred_names.append(f"Unknown Landmark {idx}")
             else:
-                full_pred_names.append(inv_ct_encoder[pred])
-
-        full_prob = np.array(torch.cat(probs))
+                if full_prob[idx] > threshold:
+                    full_pred_names.append(inv_ct_encoder[pred])
+                else:
+                    full_pred_names.append('Unknown')
 
         return np.array(full_pred_names), full_prob
 
-    def check_for_unseen(self):
-        if self.model.landmarks_unlabeled is not None:
+    def check_for_unseen(self, threshold=0):
+        if self.model.landmarks_unlabeled["mean"] is not None:
             pred, prob = self.model.check_for_unseen()
             full_prob = prob.detach().cpu().numpy()
             full_pred = pred.detach().cpu().numpy()
             inv_ct_encoder = {v: k for k, v in self.model.cell_type_encoder.items()}
             full_pred_names = []
             for idx, pred in enumerate(full_pred):
-                if full_prob[idx]:
-                    full_pred_names.append(inv_ct_encoder[pred])
+                if full_prob[idx] > threshold:
+                    full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                else:
+                    full_pred_names.append('Unknown')
             return np.array(full_pred_names), full_prob
         else:
             print("There are no unlabeled Landmarks in the model.")
             return None, None
 
-    def get_landmarks_info(self):
-        landmarks_l = None
-        for landmark in self.landmarks_labeled_:
-            mean = landmark.mean.detach().cpu().numpy()
-            mean = np.expand_dims(mean, axis=0)
-            landmarks_l = np.concatenate((landmarks_l, mean)) if landmarks_l is not None else mean
+    def add_new_cell_type(self, cell_type_name, landmarks):
+        """
 
-        l_pred, l_prob = self.classify(landmarks_l, landmark=True)
+        Parameters
+        ----------
+        cell_type_name: str
+            Name of the new cell type
+        landmarks: list
+            List of indices of the unlabeled landmarks that correspond to the new cell type
 
-        landmarks_u = self.landmarks_unlabeled_
-        u_pred, u_prob = self.classify(landmarks_u, landmark=True)
+        Returns
+        -------
 
+        """
+        self.model.add_new_cell_type(cell_type_name, landmarks)
+        self.landmarks_labeled_ = self.model.landmarks_labeled
+        self.landmarks_unlabeled_ = self.model.landmarks_unlabeled
+
+    def get_landmarks_info(self, metric="dist", threshold=0):
+        landmarks_l = self.landmarks_labeled_["mean"].detach().cpu().numpy()
+        landmarks_u = self.landmarks_unlabeled_["mean"].detach().cpu().numpy()
+
+        l_pred, l_prob = self.classify(landmarks_l, landmark=True, metric=metric, threshold=0)
+        u_pred, u_prob = self.classify(landmarks_u, landmark=True, metric=metric, threshold=threshold)
         x_info = np.concatenate((landmarks_l, landmarks_u))
         label_info = np.concatenate((l_pred, u_pred))
-        prob_info = np.concatenate((l_prob, u_prob))
+        prob_info = np.concatenate((np.ones_like(l_prob), u_prob))
         batch_info = np.array((landmarks_l.shape[0] * ['Landmark Labeled'] +
                                landmarks_u.shape[0] * ['Landmark Unlabeled']))
         return x_info, label_info, batch_info, prob_info
@@ -318,11 +337,7 @@ class TRANVAE(BaseMixin):
             'cell_type_key': dct['cell_type_key_'],
             'cell_types': dct['cell_types_'],
             'labeled_indices': dct['labeled_indices_'],
-            'n_clusters': dct['n_clusters_'],
-            'clustering': dct['clustering_'],
-            'use_unlabeled_loss': dct['use_unlabeled_loss_'],
             'landmarks_labeled': dct['landmarks_labeled_'],
-            'landmarks_normalize': dct['landmarks_normalize_'],
             'landmarks_unlabeled': dct['landmarks_unlabeled_'],
             'hidden_layer_sizes': dct['hidden_layer_sizes_'],
             'latent_dim': dct['latent_dim_'],
@@ -353,9 +368,6 @@ class TRANVAE(BaseMixin):
         adata: AnnData,
         reference_model: Union[str, 'TRVAE'],
         labeled_indices: Optional[list] = None,
-        n_clusters: Optional[int] = None,
-        clustering: Optional[str] = None,
-        use_unlabeled_loss: Optional[bool] = True,
         freeze: bool = True,
         freeze_expression: bool = True,
         remove_dropout: bool = True,
@@ -418,9 +430,6 @@ class TRANVAE(BaseMixin):
         if remove_dropout:
             init_params['dr_rate'] = 0.0
 
-        init_params['n_clusters'] = n_clusters
-        init_params['clustering'] = clustering
-        init_params['use_unlabeled_loss'] = use_unlabeled_loss
         init_params['labeled_indices'] = labeled_indices
 
         new_model = cls(adata, **init_params)
