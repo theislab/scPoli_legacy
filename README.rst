@@ -1,5 +1,5 @@
 
-Label transfer and analyzing query datata (LATAQ)
+Label transfer to analyze query data (LATAQ)
 =========================================================================
 .. raw:: html
 LATAQ is a package for semi-supervised learning on single cell data. It is compatible with architecture surgery.
