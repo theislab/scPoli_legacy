@@ -50,8 +50,9 @@ class TRANVAE(BaseMixin):
         adata: AnnData,
         condition_key: str = None,
         conditions: Optional[list] = None,
-        cell_type_key: str = None,
+        cell_type_keys: Optional[list] = None,
         cell_types: Optional[list] = None,
+        unknown_ct_names: Optional[list] = None,
         labeled_indices: Optional[list] = None,
         landmarks_labeled: Optional[dict] = None,
         landmarks_unlabeled: Optional[dict] = None,
@@ -69,7 +70,8 @@ class TRANVAE(BaseMixin):
         self.adata = adata
 
         self.condition_key_ = condition_key
-        self.cell_type_key_ = cell_type_key
+        self.cell_type_keys_ = cell_type_keys
+        self.unknown_ct_names_ = unknown_ct_names
 
         if labeled_indices is None:
             self.labeled_indices_ = range(len(adata))
@@ -84,13 +86,24 @@ class TRANVAE(BaseMixin):
         else:
             self.conditions_ = conditions
 
+        # Gather all cell type information
         if cell_types is None:
-            if cell_type_key is not None:
-                self.cell_types_ = adata.obs[cell_type_key][self.labeled_indices_].unique().tolist()
+            if cell_type_keys is not None:
+                self.cell_types_ = None
+                for cell_type_key in cell_type_keys:
+                    if self.cell_types_ is None:
+                        self.cell_types_ = adata.obs[cell_type_key][self.labeled_indices_].unique().tolist()
+                    else:
+                        self.cell_types_ += adata.obs[cell_type_key][self.labeled_indices_].unique().tolist()
             else:
                 self.cell_types_ = []
         else:
             self.cell_types_ = cell_types
+
+        if self.unknown_ct_names_ is not None:
+            for unknown_ct in self.unknown_ct_names_:
+                if unknown_ct in self.cell_types_:
+                    self.cell_types_.remove(unknown_ct)
 
         self.hidden_layer_sizes_ = hidden_layer_sizes
         self.latent_dim_ = latent_dim
@@ -111,6 +124,7 @@ class TRANVAE(BaseMixin):
             input_dim=self.input_dim_,
             conditions=self.conditions_,
             cell_types=self.cell_types_,
+            unknown_ct_names=self.unknown_ct_names_,
             landmarks_labeled=self.landmarks_labeled_,
             landmarks_unlabeled=self.landmarks_unlabeled_,
             hidden_layer_sizes=self.hidden_layer_sizes_,
@@ -160,7 +174,7 @@ class TRANVAE(BaseMixin):
             self.adata,
             labeled_indices=self.labeled_indices_,
             condition_key=self.condition_key_,
-            cell_type_key=self.cell_type_key_,
+            cell_type_keys=self.cell_type_keys_,
             **kwargs)
         self.trainer.train(n_epochs, lr, eps)
         self.is_trained_ = True
@@ -221,7 +235,7 @@ class TRANVAE(BaseMixin):
             x: Optional[np.ndarray] = None,
             c: Optional[np.ndarray] = None,
             landmark=False,
-            metric="exp",
+            metric="dist",
             threshold=0,
     ):
         device = next(self.model.parameters()).device
@@ -334,7 +348,7 @@ class TRANVAE(BaseMixin):
         init_params = {
             'condition_key': dct['condition_key_'],
             'conditions': dct['conditions_'],
-            'cell_type_key': dct['cell_type_key_'],
+            'cell_type_keys': dct['cell_type_keys_'],
             'cell_types': dct['cell_types_'],
             'labeled_indices': dct['labeled_indices_'],
             'landmarks_labeled': dct['landmarks_labeled_'],
@@ -368,6 +382,7 @@ class TRANVAE(BaseMixin):
         adata: AnnData,
         reference_model: Union[str, 'TRVAE'],
         labeled_indices: Optional[list] = None,
+        unknown_ct_names: Optional[list] = None,
         freeze: bool = True,
         freeze_expression: bool = True,
         remove_dropout: bool = True,
@@ -415,9 +430,22 @@ class TRANVAE(BaseMixin):
             conditions.append(condition)
 
         cell_types = init_params['cell_types']
-        cell_type_key = init_params['cell_type_key']
+        cell_type_keys = init_params['cell_type_keys']
         new_cell_types = []
-        adata_cell_types = adata.obs[cell_type_key][labeled_indices].unique().tolist()
+
+        # Check for cell types in new adata
+        adata_cell_types = None
+        for cell_type_key in cell_type_keys:
+            if adata_cell_types is None:
+                adata_cell_types = adata.obs[cell_type_key][labeled_indices].unique().tolist()
+            else:
+                adata_cell_types += adata.obs[cell_type_key][labeled_indices].unique().tolist()
+
+        if unknown_ct_names is not None:
+            for unknown_ct in unknown_ct_names:
+                if unknown_ct in adata_cell_types:
+                    adata_cell_types.remove(unknown_ct)
+
         # Check if new conditions are already known
         for item in adata_cell_types:
             if item not in cell_types:
@@ -431,11 +459,13 @@ class TRANVAE(BaseMixin):
             init_params['dr_rate'] = 0.0
 
         init_params['labeled_indices'] = labeled_indices
+        init_params['unknown_ct_names'] = unknown_ct_names
 
         new_model = cls(adata, **init_params)
         new_model._load_expand_params_from_dict(model_state_dict)
 
         if freeze:
+            new_model.model.freeze = True
             for name, p in new_model.model.named_parameters():
                 p.requires_grad = False
                 if 'theta' in name:

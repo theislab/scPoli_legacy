@@ -24,7 +24,7 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
-experiments = ["tumor"]
+experiments = ["pancreas"]
 test_nrs = [10]
 
 unlabeled_strat = "batch"
@@ -36,7 +36,7 @@ use_mmd = False
 
 # Training Params
 tranvae_epochs = 500
-pretraining_epochs = 200
+pretraining_epochs = 0
 alpha_epoch_anneal = 1e6
 eta = 1
 tau = 0
@@ -48,7 +48,7 @@ class_metric = "dist"
 
 early_stopping_kwargs = {
     "early_stopping_metric": "val_classifier_loss",
-    "mode": "max",
+    "mode": "min",
     "threshold": 0,
     "patience": 20,
     "reduce_lr": True,
@@ -156,6 +156,8 @@ for experiment in experiments:
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
 
+        experiment = 'panc_test'
+
         print("\n\n\n\nSTARTING WITH EXPERIMENT:", experiment, test_nr)
 
         adata = remove_sparsity(adata)
@@ -180,7 +182,7 @@ for experiment in experiments:
         tranvae = TRANVAE(
             adata=adata,
             condition_key=condition_key,
-            cell_type_key=cell_type_key,
+            cell_type_keys=[cell_type_key],
             hidden_layer_sizes=[128, 128],
             latent_dim=latent_dim,
             use_mmd=use_mmd,

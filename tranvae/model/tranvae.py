@@ -16,6 +16,7 @@ class tranVAE(trVAE):
                  input_dim: int,
                  conditions: list,
                  cell_types: list,
+                 unknown_ct_names: Optional[list] = None,
                  landmarks_labeled: Optional[dict] = None,
                  landmarks_unlabeled: Optional[dict] = None,
                  **trvae_kwargs,
@@ -28,6 +29,10 @@ class tranVAE(trVAE):
         self.n_cell_types = len(cell_types)
         self.cell_types = cell_types
         self.cell_type_encoder = {k: v for k, v in zip(cell_types, range(len(cell_types)))}
+        self.unknown_ct_names = unknown_ct_names
+        if self.unknown_ct_names is not None:
+            for unknown_ct in self.unknown_ct_names:
+                self.cell_type_encoder[unknown_ct] = -1
         self.landmarks_labeled = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
         self.landmarks_unlabeled = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
         self.new_landmarks = None
@@ -107,7 +112,7 @@ class tranVAE(trVAE):
         probs, preds = torch.max(overlap, dim=1)
         return preds, probs
 
-    def forward(self, x=None, batch=None, sizefactor=None, celltype=None, labeled=None):
+    def forward(self, x=None, batch=None, sizefactor=None, celltypes=None, labeled=None):
         x_log = torch.log(1 + x)
         z1_mean, z1_log_var = self.encoder(x_log, batch)
         z1 = self.sampling(z1_mean, z1_log_var)
