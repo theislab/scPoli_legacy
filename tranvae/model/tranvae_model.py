@@ -51,7 +51,7 @@ class TRANVAE(BaseMixin):
         condition_key: str = None,
         conditions: Optional[list] = None,
         cell_type_keys: Optional[list] = None,
-        cell_types: Optional[list] = None,
+        cell_types: Optional[dict] = None,
         unknown_ct_names: Optional[list] = None,
         labeled_indices: Optional[list] = None,
         landmarks_labeled: Optional[dict] = None,
@@ -89,21 +89,23 @@ class TRANVAE(BaseMixin):
         # Gather all cell type information
         if cell_types is None:
             if cell_type_keys is not None:
-                self.cell_types_ = None
+                self.cell_types_ = dict()
                 for cell_type_key in cell_type_keys:
-                    if self.cell_types_ is None:
-                        self.cell_types_ = adata.obs[cell_type_key][self.labeled_indices_].unique().tolist()
-                    else:
-                        self.cell_types_ += adata.obs[cell_type_key][self.labeled_indices_].unique().tolist()
+                    uniq_cts = adata.obs[cell_type_key][self.labeled_indices_].unique().tolist()
+                    for ct in uniq_cts:
+                        if ct in self.cell_types_:
+                            self.cell_types_[ct].append(cell_type_key)
+                        else:
+                            self.cell_types_[ct] = [cell_type_key]
             else:
-                self.cell_types_ = []
+                self.cell_types_ = dict()
         else:
             self.cell_types_ = cell_types
 
         if self.unknown_ct_names_ is not None:
             for unknown_ct in self.unknown_ct_names_:
                 if unknown_ct in self.cell_types_:
-                    self.cell_types_.remove(unknown_ct)
+                    del self.cell_types_[unknown_ct]
 
         self.hidden_layer_sizes_ = hidden_layer_sizes
         self.latent_dim_ = latent_dim
@@ -120,10 +122,12 @@ class TRANVAE(BaseMixin):
         self.landmarks_labeled_ = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
         self.landmarks_unlabeled_ = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
 
+        model_cell_types = list(self.cell_types_.keys())
+
         self.model = tranVAE(
             input_dim=self.input_dim_,
             conditions=self.conditions_,
-            cell_types=self.cell_types_,
+            cell_types=model_cell_types,
             unknown_ct_names=self.unknown_ct_names_,
             landmarks_labeled=self.landmarks_labeled_,
             landmarks_unlabeled=self.landmarks_unlabeled_,
@@ -256,61 +260,57 @@ class TRANVAE(BaseMixin):
 
         x = torch.tensor(x, device='cpu')
 
-        preds = []
-        probs = []
-        indices = torch.arange(x.size(0), device=device)
-        subsampled_indices = indices.split(512)
-        for batch in subsampled_indices:
-            if landmark:
-                pred, prob = self.model.classify(
-                    x[batch, :].to(device),
-                    landmark=landmark,
-                    metric=metric)
-            else:
-                pred, prob = self.model.classify(
-                    x[batch, :].to(device),
-                    c[batch].to(device),
-                    landmark=landmark,
-                    metric=metric
-                )
-            preds += [pred.cpu().detach()]
-            probs += [prob.cpu().detach()]
+        results = list()
+        for cell_type_key in self.cell_type_keys_:
+            landmarks_idx = list()
+            for i, key in enumerate(self.cell_types_.keys()):
+                if cell_type_key in self.cell_types_[key]:
+                    landmarks_idx.append(i)
 
-        full_pred = np.array(torch.cat(preds))
-        full_prob = np.array(torch.cat(probs))
-        inv_ct_encoder = {v: k for k, v in self.model.cell_type_encoder.items()}
-        full_pred_names = []
+            landmarks_idx = torch.tensor(landmarks_idx, device=device)
 
-        for idx, pred in enumerate(full_pred):
-            if landmark:
-                if full_prob[idx] > threshold:
-                    full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+            preds = []
+            probs = []
+            indices = torch.arange(x.size(0), device=device)
+            subsampled_indices = indices.split(512)
+            for batch in subsampled_indices:
+                if landmark:
+                    pred, prob = self.model.classify(
+                        x[batch, :].to(device),
+                        landmark=landmark,
+                        classes_list=landmarks_idx,
+                        metric=metric)
                 else:
-                    full_pred_names.append(f"Unknown Landmark {idx}")
-            else:
-                if full_prob[idx] > threshold:
-                    full_pred_names.append(inv_ct_encoder[pred])
-                else:
-                    full_pred_names.append('Unknown')
+                    pred, prob = self.model.classify(
+                        x[batch, :].to(device),
+                        c[batch].to(device),
+                        landmark=landmark,
+                        classes_list=landmarks_idx,
+                        metric=metric
+                    )
+                preds += [pred.cpu().detach()]
+                probs += [prob.cpu().detach()]
 
-        return np.array(full_pred_names), full_prob
-
-    def check_for_unseen(self, threshold=0):
-        if self.model.landmarks_unlabeled["mean"] is not None:
-            pred, prob = self.model.check_for_unseen()
-            full_prob = prob.detach().cpu().numpy()
-            full_pred = pred.detach().cpu().numpy()
+            full_pred = np.array(torch.cat(preds))
+            full_prob = np.array(torch.cat(probs))
             inv_ct_encoder = {v: k for k, v in self.model.cell_type_encoder.items()}
             full_pred_names = []
+
             for idx, pred in enumerate(full_pred):
-                if full_prob[idx] > threshold:
-                    full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                if landmark:
+                    if full_prob[idx] > threshold:
+                        full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
+                    else:
+                        full_pred_names.append(f"Unknown Landmark {idx}")
                 else:
-                    full_pred_names.append('Unknown')
-            return np.array(full_pred_names), full_prob
-        else:
-            print("There are no unlabeled Landmarks in the model.")
-            return None, None
+                    if full_prob[idx] > threshold:
+                        full_pred_names.append(inv_ct_encoder[pred])
+                    else:
+                        full_pred_names.append('Unknown')
+
+            results.append({'preds': np.array(full_pred_names), 'probs': full_prob})
+
+        return results
 
     def add_new_cell_type(self, cell_type_name, landmarks):
         """
@@ -431,29 +431,26 @@ class TRANVAE(BaseMixin):
 
         cell_types = init_params['cell_types']
         cell_type_keys = init_params['cell_type_keys']
-        new_cell_types = []
 
         # Check for cell types in new adata
-        adata_cell_types = None
+        adata_cell_types = dict()
         for cell_type_key in cell_type_keys:
-            if adata_cell_types is None:
-                adata_cell_types = adata.obs[cell_type_key][labeled_indices].unique().tolist()
-            else:
-                adata_cell_types += adata.obs[cell_type_key][labeled_indices].unique().tolist()
+            uniq_cts = adata.obs[cell_type_key][labeled_indices].unique().tolist()
+            for ct in uniq_cts:
+                if ct in adata_cell_types:
+                    adata_cell_types[ct].append(cell_type_key)
+                else:
+                    adata_cell_types[ct] = [cell_type_key]
 
         if unknown_ct_names is not None:
             for unknown_ct in unknown_ct_names:
                 if unknown_ct in adata_cell_types:
-                    adata_cell_types.remove(unknown_ct)
+                    del adata_cell_types[unknown_ct]
 
-        # Check if new conditions are already known
-        for item in adata_cell_types:
-            if item not in cell_types:
-                new_cell_types.append(item)
-
-        # Add new conditions to overall conditions
-        for cell_type in new_cell_types:
-            cell_types.append(cell_type)
+        # Check if new conditions are already known and if not add them
+        for key in adata_cell_types:
+            if key not in cell_types:
+                cell_types[key] = adata_cell_types[key]
 
         if remove_dropout:
             init_params['dr_rate'] = 0.0

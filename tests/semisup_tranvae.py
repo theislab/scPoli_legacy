@@ -156,7 +156,7 @@ for experiment in experiments:
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
 
-        experiment = 'panc_test'
+        experiment = 'panc_test_2'
 
         print("\n\n\n\nSTARTING WITH EXPERIMENT:", experiment, test_nr)
 
@@ -210,7 +210,9 @@ for experiment in experiments:
         text_file_t.close()
 
         # UNLABELED EVAL
-        preds, probs = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric=class_metric)
+        results_dict = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric=class_metric)[0]
+        preds = results_dict['preds']
+        probs = results_dict['probs']
 
         text_file_q = open(
             os.path.expanduser(
@@ -296,7 +298,9 @@ for experiment in experiments:
 
         # FULL EVAL
 
-        preds, probs = tranvae.classify(metric=class_metric)
+        results_dict = tranvae.classify(metric=class_metric)[0]
+        preds = results_dict['preds']
+        probs = results_dict['probs']
         text_file_f = open(
             os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_full_acc_report.txt'), "w")
         n = text_file_f.write(classification_report(y_true=adata.obs[cell_type_key], y_pred=preds))
