@@ -262,7 +262,7 @@ class tranVAETrainer(Trainer):
         labeled_loss = torch.tensor(0, device=self.device)
         if self.epoch >= self.pretraining_epochs:
             # Calculate landmark loss for unlabeled data
-            if self.unlabeled_weight > 0:
+            if self.landmarks_unlabeled is not None and self.unlabeled_weight > 0:
                 unlabeled_loss, _ = self.landmark_unlabeled_loss(
                     latent,
                     torch.stack(self.landmarks_unlabeled).squeeze(),

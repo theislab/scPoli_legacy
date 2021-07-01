@@ -23,7 +23,7 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-experiments = ["tumor"]
+experiments = ["pancreas"]
 test_nrs = [10]
 
 # Model Params
@@ -32,7 +32,7 @@ use_mmd = False
 
 # Training Params
 tranvae_epochs = 500
-pretraining_epochs = 200
+pretraining_epochs = 0
 alpha_epoch_anneal = 1e6
 eta = 1
 tau = 0
@@ -152,6 +152,8 @@ for experiment in experiments:
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
 
+        experiment = 'panc_test'
+
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
         target_adata = adata[adata.obs.study.isin(query)].copy()
@@ -159,7 +161,7 @@ for experiment in experiments:
         tranvae = TRANVAE(
             adata=source_adata,
             condition_key=condition_key,
-            cell_type_key=cell_type_key,
+            cell_type_keys=[cell_type_key],
             hidden_layer_sizes=[128, 128],
             latent_dim=latent_dim,
             use_mmd=use_mmd,

@@ -24,12 +24,12 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
-experiments = ["tumor"]
+experiments = ["pancreas"]
 test_nrs = [10]
 
 # Training Params
 tranvae_epochs = 500
-pretraining_epochs = 100
+pretraining_epochs = 0
 alpha_epoch_anneal = 1e6
 eta = 1
 tau = 0
@@ -149,6 +149,8 @@ for experiment in experiments:
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
 
+        experiment = 'panc_test'
+
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
         target_adata = adata[adata.obs.study.isin(query)].copy()
@@ -179,7 +181,9 @@ for experiment in experiments:
         text_file_t.close()
 
         # EVAL UNLABELED
-        preds, probs = tranvae.classify(metric=class_metric)
+        results_dict = tranvae.classify(metric=class_metric)[0]
+        preds = results_dict['preds']
+        probs = results_dict['probs']
         checks = np.array(len(target_adata) * ['incorrect'])
         checks[preds == target_adata.obs[cell_type_key]] = 'correct'
 
@@ -263,7 +267,9 @@ for experiment in experiments:
         plt.close()
 
         # EVAL FULL
-        preds, probs = tranvae.classify(adata.X, adata.obs[condition_key], metric=class_metric)
+        results_dict = tranvae.classify(adata.X, adata.obs[condition_key], metric=class_metric)[0]
+        preds = results_dict['preds']
+        probs = results_dict['probs']
         checks = np.array(len(adata) * ['incorrect'])
         checks[preds == adata.obs[cell_type_key]] = 'correct'
         text_file_f = open(
