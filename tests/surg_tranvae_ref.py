@@ -23,7 +23,7 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-experiments = ["pancreas"]
+experiments = ["lung_h"]
 test_nrs = [10]
 
 # Model Params
@@ -51,7 +51,7 @@ early_stopping_kwargs = {
     "lr_patience": 13,
     "lr_factor": 0.1,
 }
-cell_type_key = "cell_type"
+cell_type_key = ["cell_type"]
 for experiment in experiments:
     for test_nr in test_nrs:
         if experiment == "pancreas":
@@ -151,8 +151,14 @@ for experiment in experiments:
                 reference = ['breast', 'colorectal', 'liver2', 'liver1', 'lung1', 'lung2', 'multiple', 'ovary',
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
-
-        experiment = 'panc_test'
+        if experiment == "lung_h":
+            adata = sc.read(
+                os.path.expanduser(f'~/Documents/benchmarking_datasets/adata_lung_subsampled.h5ad'))
+            condition_key = "study"
+            cell_type_key = ["ann_level_1", "ann_level_2"]
+            if test_nr == 10:
+                reference = ["Stanford_Krasnow_bioRxivTravaglini", "Misharin_new"]
+                query = ["Vanderbilt_Kropski_bioRxivHabermann_vand", "Sanger_Teichmann_2019VieiraBraga"]
 
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
@@ -161,7 +167,7 @@ for experiment in experiments:
         tranvae = TRANVAE(
             adata=source_adata,
             condition_key=condition_key,
-            cell_type_keys=[cell_type_key],
+            cell_type_keys=cell_type_key,
             hidden_layer_sizes=[128, 128],
             latent_dim=latent_dim,
             use_mmd=use_mmd,

@@ -24,7 +24,7 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
-experiments = ["pancreas"]
+experiments = ["lung_h"]
 test_nrs = [10]
 
 # Training Params
@@ -48,7 +48,7 @@ early_stopping_kwargs = {
     "lr_patience": 13,
     "lr_factor": 0.1,
 }
-cell_type_key = "cell_type"
+cell_type_key = ["cell_type"]
 for experiment in experiments:
     for test_nr in test_nrs:
         if experiment == "pancreas":
@@ -148,8 +148,14 @@ for experiment in experiments:
                 reference = ['breast', 'colorectal', 'liver2', 'liver1', 'lung1', 'lung2', 'multiple', 'ovary',
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
-
-        experiment = 'panc_test'
+        if experiment == "lung_h":
+            adata = sc.read(
+                os.path.expanduser(f'~/Documents/benchmarking_datasets/adata_lung_subsampled.h5ad'))
+            condition_key = "study"
+            cell_type_key = ["ann_level_1", "ann_level_2"]
+            if test_nr == 10:
+                reference = ["Stanford_Krasnow_bioRxivTravaglini", "Misharin_new"]
+                query = ["Vanderbilt_Kropski_bioRxivHabermann_vand", "Sanger_Teichmann_2019VieiraBraga"]
 
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
@@ -181,46 +187,50 @@ for experiment in experiments:
         text_file_t.close()
 
         # EVAL UNLABELED
-        results_dict = tranvae.classify(metric=class_metric)[0]
-        preds = results_dict['preds']
-        probs = results_dict['probs']
-        checks = np.array(len(target_adata) * ['incorrect'])
-        checks[preds == target_adata.obs[cell_type_key]] = 'correct'
-
-        text_file_q = open(
-            os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_acc_report.txt'),
-            "w")
-        n = text_file_q.write(classification_report(
-            y_true=target_adata.obs[cell_type_key],
-            y_pred=preds,
-            labels=np.array(target_adata.obs[cell_type_key].unique().tolist())
-        ))
-        text_file_q.close()
-        correct_probs = probs[preds == target_adata.obs[cell_type_key]]
-        incorrect_probs = probs[preds != target_adata.obs[cell_type_key]]
-        data = [correct_probs, incorrect_probs]
-        fig, ax = plt.subplots()
-        ax.set_title('Default violin plot')
-        ax.set_ylabel('Observed values')
-        ax.violinplot(data)
-        labels = ['Correct', 'Incorrect']
-        set_axis_style(ax, labels)
-        plt.savefig(os.path.expanduser(
-            f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_uncertainty.png'),
-                    bbox_inches='tight')
-
         data_latent = tranvae.get_latent()
         adata_latent = sc.AnnData(data_latent)
-        adata_latent.obs['celltype'] = target_adata.obs[cell_type_key].tolist()
         adata_latent.obs['batch'] = target_adata.obs[condition_key].tolist()
-        adata_latent.obs['predictions'] = preds.tolist()
-        adata_latent.obs['checking'] = checks.tolist()
+        results_dict = tranvae.classify(metric=class_metric)
+        for i in range(len(cell_type_key)):
+            preds = results_dict[i]['preds']
+            probs = results_dict[i]['probs']
+
+            text_file_q = open(
+                os.path.expanduser(
+                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_acc_report_{i}.txt'),
+                "w")
+            n = text_file_q.write(classification_report(
+                y_true=target_adata.obs[cell_type_key[i]],
+                y_pred=preds,
+                labels=np.array(target_adata.obs[cell_type_key[i]].unique().tolist())
+            ))
+            text_file_q.close()
+
+            correct_probs = probs[preds == target_adata.obs[cell_type_key[i]]]
+            incorrect_probs = probs[preds != target_adata.obs[cell_type_key[i]]]
+            data = [correct_probs, incorrect_probs]
+            fig, ax = plt.subplots()
+            ax.set_title('Default violin plot')
+            ax.set_ylabel('Observed values')
+            ax.violinplot(data)
+            labels = ['Correct', 'Incorrect']
+            set_axis_style(ax, labels)
+            plt.savefig(
+                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_uncertainty_{i}.png'),
+                bbox_inches='tight')
+
+            checks = np.array(len(target_adata) * ['incorrect'])
+            checks[preds == target_adata.obs[cell_type_key[i]]] = 'correct'
+            adata_latent.obs[cell_type_key[i]] = target_adata.obs[cell_type_key[i]].tolist()
+            adata_latent.obs[f'{cell_type_key[i]}_pred'] = preds.tolist()
+            adata_latent.obs[f'{cell_type_key[i]}_bool'] = checks.tolist()
+
         adata_latent.write_h5ad(filename=os.path.expanduser(
             f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_adata.h5ad'))
         sc.pp.neighbors(adata_latent, n_neighbors=8)
         sc.tl.leiden(adata_latent)
         sc.tl.umap(adata_latent)
+
         sc.pl.umap(adata_latent,
                    color=['batch'],
                    frameon=False,
@@ -232,62 +242,59 @@ for experiment in experiments:
                 f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_umap_batch.png'),
             bbox_inches='tight')
         plt.close()
-        sc.pl.umap(adata_latent,
-                   color=['celltype'],
-                   frameon=False,
-                   wspace=0.6,
-                   show=False
-                   )
-        plt.savefig(
-            os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_umap_ct.png'),
-            bbox_inches='tight')
-        plt.close()
-        sc.pl.umap(adata_latent,
-                   color=['predictions'],
-                   frameon=False,
-                   wspace=0.6,
-                   show=False
-                   )
-        plt.savefig(
-            os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_umap_pred.png'),
-            bbox_inches='tight')
-        plt.close()
-        sc.pl.umap(adata_latent,
-                   color=['checking'],
-                   frameon=False,
-                   wspace=0.6,
-                   show=False
-                   )
-        plt.savefig(
-            os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_umap_checks.png'),
-            bbox_inches='tight')
-        plt.close()
+
+        for key in cell_type_key:
+            sc.pl.umap(adata_latent,
+                       color=[key, f'{key}_pred', f'{key}_bool'],
+                       frameon=False,
+                       wspace=0.6,
+                       show=False
+                       )
+            plt.savefig(
+                os.path.expanduser(
+                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_umap_{key}.png'),
+                bbox_inches='tight')
+            plt.close()
 
         # EVAL FULL
-        results_dict = tranvae.classify(adata.X, adata.obs[condition_key], metric=class_metric)[0]
-        preds = results_dict['preds']
-        probs = results_dict['probs']
-        checks = np.array(len(adata) * ['incorrect'])
-        checks[preds == adata.obs[cell_type_key]] = 'correct'
-        text_file_f = open(
-            os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_acc_report.txt'),
-            "w")
-        n = text_file_f.write(classification_report(y_true=adata.obs[cell_type_key], y_pred=preds))
-        text_file_f.close()
         data_latent = tranvae.get_latent(adata.X, adata.obs[condition_key])
         adata_latent = sc.AnnData(data_latent)
-        adata_latent.obs['celltype'] = adata.obs[cell_type_key].tolist()
         adata_latent.obs['batch'] = adata.obs[condition_key].tolist()
-        adata_latent.obs['predictions'] = preds.tolist()
-        adata_latent.obs['checking'] = checks.tolist()
+        results_dict = tranvae.classify(adata.X, adata.obs[condition_key], metric=class_metric)
+        for i in range(len(cell_type_key)):
+            preds = results_dict[i]['preds']
+            probs = results_dict[i]['probs']
+            text_file_f = open(
+                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_acc_report_{i}.txt'), "w")
+            n = text_file_f.write(classification_report(y_true=adata.obs[cell_type_key[i]], y_pred=preds))
+            text_file_f.close()
+
+            correct_probs = probs[preds == adata.obs[cell_type_key[i]]]
+            incorrect_probs = probs[preds != adata.obs[cell_type_key[i]]]
+            data = [correct_probs, incorrect_probs]
+            fig, ax = plt.subplots()
+            ax.set_title('Default violin plot')
+            ax.set_ylabel('Observed values')
+            ax.violinplot(data)
+            labels = ['Correct', 'Incorrect']
+            set_axis_style(ax, labels)
+            plt.savefig(
+                os.path.expanduser(
+                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_uncertainty_{i}.png'),
+                bbox_inches='tight')
+
+            checks = np.array(len(adata) * ['incorrect'])
+            checks[preds == adata.obs[cell_type_key[i]]] = 'correct'
+            adata_latent.obs[cell_type_key[i]] = adata.obs[cell_type_key[i]].tolist()
+            adata_latent.obs[f'{cell_type_key[i]}_pred'] = preds.tolist()
+            adata_latent.obs[f'{cell_type_key[i]}_bool'] = checks.tolist()
+
         adata_latent.write_h5ad(filename=os.path.expanduser(
             f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_adata.h5ad'))
         sc.pp.neighbors(adata_latent, n_neighbors=8)
         sc.tl.leiden(adata_latent)
         sc.tl.umap(adata_latent)
+
         sc.pl.umap(adata_latent,
                    color=['batch'],
                    frameon=False,
@@ -299,36 +306,16 @@ for experiment in experiments:
                 f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_umap_batch.png'),
             bbox_inches='tight')
         plt.close()
-        sc.pl.umap(adata_latent,
-                   color=['celltype'],
-                   frameon=False,
-                   wspace=0.6,
-                   show=False
-                   )
-        plt.savefig(
-            os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_umap_ct.png'),
-            bbox_inches='tight')
-        plt.close()
-        sc.pl.umap(adata_latent,
-                   color=['predictions'],
-                   frameon=False,
-                   wspace=0.6,
-                   show=False
-                   )
-        plt.savefig(
-            os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_umap_pred.png'),
-            bbox_inches='tight')
-        plt.close()
-        sc.pl.umap(adata_latent,
-                   color=['checking'],
-                   frameon=False,
-                   wspace=0.6,
-                   show=False
-                   )
-        plt.savefig(
-            os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_umap_checks.png'),
-            bbox_inches='tight')
-        plt.close()
+
+        for key in cell_type_key:
+            sc.pl.umap(adata_latent,
+                       color=[key, f'{key}_pred', f'{key}_bool'],
+                       frameon=False,
+                       wspace=0.6,
+                       show=False
+                       )
+            plt.savefig(
+                os.path.expanduser(
+                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_umap_{key}.png'),
+                bbox_inches='tight')
+            plt.close()
