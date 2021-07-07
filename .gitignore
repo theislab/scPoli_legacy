@@ -1,4 +1,7 @@
 datasets/
+data/
+tranvae_benchmarks/
+*.egg-info/
 .idea/
 __pycache__/
 docs/_build
@@ -6,3 +9,4 @@ own_tests/
 *.egg-info
 build/
 dist/
+.ipynb_checkpoints/
