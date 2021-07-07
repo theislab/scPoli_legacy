@@ -17,7 +17,7 @@ Use pip command in terminal:
 Support and contribute
 -------------------------------
 If you have a question or new architecture suggestions that could be integrated into our pipeline, you can
-post an `issue <https://github.com/theislab/LATAQ/issues/new>`__ or reach us by `email <mailto:cottoneyejoe.server@gmail.com,mo.lotfollahi@gmail.com>`_.
+post an `issue <https://github.com/theislab/LATAQ/issues/new>`__ or reach us by `email <mailto:cottoneyejoe.server@gmail.com,carlo.dedonno@helmholtz-muenchen.de,mo.lotfollahi@gmail.com>`_.
 
 Reference
 -------------------------------
