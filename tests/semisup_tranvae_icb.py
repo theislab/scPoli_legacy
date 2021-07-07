@@ -13,6 +13,20 @@ parser.add_argument(
     default=10
 )
 
+parser.add_argument(
+    '--data_dir', 
+    type=str,
+    help='Number of test',
+    default='../data'
+)
+
+parser.add_argument(
+    '--results_dir', 
+    type=str,
+    help='Number of test',
+    default='../tranvae_benchmarks/batchwise/semi'
+)
+
 args = parser.parse_args()
 print(args)
 
@@ -31,6 +45,8 @@ sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
 torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
+RESULTS_DIR = args.results_dir
+DATA_DIR = args.data_dir
 
 def set_axis_style(ax, labels):
     ax.get_xaxis().set_tick_params(direction='out')
@@ -75,7 +91,9 @@ cell_type_key = ["cell_type"]
 for experiment in experiments:
     for test_nr in test_nrs:
         if experiment == "pancreas":
-            adata = sc.read('../data/benchmark_pancreas_shrinked.h5ad')
+            adata = sc.read(
+                f'{DATA_DIR}/benchmark_pancreas_shrinked.h5ad'
+            )
             condition_key = "study"
             if test_nr == 1:
                 reference = ['Pancreas inDrop']
@@ -97,7 +115,8 @@ for experiment in experiments:
                 query = ["celseq", "celseq2"]
         if experiment == "pbmc":
             adata = sc.read(
-                f'../data/benchmark_pbmc_shrinked.h5ad')
+                f'{DATA_DIR}/benchmark_pbmc_shrinked.h5ad'
+            )
             condition_key = 'condition'
             if test_nr == 1:
                 reference = ['Oetjen']
@@ -115,7 +134,7 @@ for experiment in experiments:
                 reference = ['Oetjen', '10X', 'Sun']
                 query = ['Freytag']
         if experiment == "brain":
-            adata = sc.read(f'../data/benchmark_brain_shrinked.h5ad')
+            adata = sc.read(f'{DATA_DIR}/benchmark_brain_shrinked.h5ad')
             condition_key = "study"
             if test_nr == 1:
                 reference = ['Rosenberg']
@@ -133,7 +152,7 @@ for experiment in experiments:
                 reference = ['Rosenberg', 'Saunders']
                 query = ['Zeisel', 'Tabula_muris']
         if experiment == "scvelo":
-            adata = sc.read(f'../data/benchmark_scvelo_shrinked.h5ad')
+            adata = sc.read(f'{DATA_DIR}/benchmark_scvelo_shrinked.h5ad')
             condition_key = "study"
             if test_nr == 1:
                 reference = ['12.5']
@@ -151,7 +170,7 @@ for experiment in experiments:
                 reference = ['12.5', '13.5']
                 query = ['14.5', '15.5']
         if experiment == "lung":
-            adata = sc.read(f'../data/benchmark_lung_shrinked.h5ad')
+            adata = sc.read(f'{DATA_DIR}/benchmark_lung_shrinked.h5ad')
             condition_key = "condition"
             if test_nr == 1:
                 reference = ['Dropseq_transplant', '10x_Biopsy']
@@ -160,14 +179,14 @@ for experiment in experiments:
                 reference = ['Dropseq_transplant', '10x_Biopsy']
                 query = ['10x_Transplant']
         if experiment == "tumor":
-            adata = sc.read(f'../data/benchmark_tumor_shrinked.h5ad')
+            adata = sc.read(f'{DATA_DIR}/benchmark_tumor_shrinked.h5ad')
             condition_key = "study"
             if test_nr == 10:
                 reference = ['breast', 'colorectal', 'liver2', 'liver1', 'lung1', 'lung2', 'multiple', 'ovary',
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
         if experiment == "lung_h":
-            adata = sc.read(f'../data/adata_lung_subsampled.h5ad')
+            adata = sc.read(f'{DATA_DIR}/adata_lung_subsampled.h5ad')
             condition_key = "study"
             cell_type_key = ["ann_level_1", "ann_level_2"]
             if test_nr == 10:
@@ -224,9 +243,9 @@ for experiment in experiments:
         ref_time = time.time() - ref_time
         
         #save model
-        ref_path = f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_model'
+        ref_path = f'{RESULTS_DIR}/{experiment}/{test_nr}_model'
         tranvae.save(ref_path, overwrite=True)
-        text_file_t = open(f'..//tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_runtime.txt', "w")
+        text_file_t = open(f'{RESULTS_DIR}/{experiment}/{test_nr}_runtime.txt', "w")
         m = text_file_t.write(str(ref_time))
         text_file_t.close()
 
@@ -247,7 +266,7 @@ for experiment in experiments:
             probs = results_dict[i]['probs']
 
             text_file_q = open(
-                f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_query_acc_report_{i}.txt', 
+                f'{RESULTS_DIR}/{experiment}/{test_nr}_query_acc_report_{i}.txt', 
                 "w"
             )
             n = text_file_q.write(
@@ -271,7 +290,7 @@ for experiment in experiments:
             labels = ['Correct', 'Incorrect']
             set_axis_style(ax, labels)
             plt.savefig(
-                f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_query_uncertainty_{i}.png',
+                f'{RESULTS_DIR}/{experiment}/{test_nr}_query_uncertainty_{i}.png',
                 bbox_inches='tight'
             )
 
@@ -282,7 +301,7 @@ for experiment in experiments:
             adata_latent.obs[f'{cell_type_key[i]}_bool'] = checks.tolist()
 
         adata_latent.write_h5ad(
-            filename=f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_query_adata.h5ad'
+            filename=f'{RESULTS_DIR}/{experiment}/{test_nr}_query_adata.h5ad'
         )
         sc.pp.neighbors(adata_latent, n_neighbors=8)
         sc.tl.leiden(adata_latent)
@@ -295,7 +314,7 @@ for experiment in experiments:
             show=False
         )
         plt.savefig(
-            f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_query_umap_batch.png',
+            f'{RESULTS_DIR}/{experiment}/{test_nr}_query_umap_batch.png',
             bbox_inches='tight'
         )
         plt.close()
@@ -309,7 +328,7 @@ for experiment in experiments:
                 show=False
             )
             plt.savefig(
-                f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_query_umap_{key}.png',
+                f'{RESULTS_DIR}/{experiment}/{test_nr}_query_umap_{key}.png',
                 bbox_inches='tight'
             )
             plt.close()
@@ -324,7 +343,7 @@ for experiment in experiments:
             preds = results_dict[i]['preds']
             probs = results_dict[i]['probs']
             text_file_f = open(
-                f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_full_acc_report_{i}.txt', 
+                f'{RESULTS_DIR}/{experiment}/{test_nr}_full_acc_report_{i}.txt', 
                 "w"
             )
             n = text_file_f.write(
@@ -347,7 +366,7 @@ for experiment in experiments:
             labels = ['Correct', 'Incorrect']
             set_axis_style(ax, labels)
             plt.savefig(
-                f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_full_uncertainty_{i}.png',
+                f'{RESULTS_DIR}/{experiment}/{test_nr}_full_uncertainty_{i}.png',
                 bbox_inches='tight'
             )
 
@@ -358,7 +377,7 @@ for experiment in experiments:
             adata_latent.obs[f'{cell_type_key[i]}_bool'] = checks.tolist()
 
         adata_latent.write_h5ad(
-            filename=f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_full_adata.h5ad'
+            filename=f'{RESULTS_DIR}/{experiment}/{test_nr}_full_adata.h5ad'
         )
         sc.pp.neighbors(adata_latent, n_neighbors=8)
         sc.tl.leiden(adata_latent)
@@ -372,7 +391,7 @@ for experiment in experiments:
             show=False
         )
         plt.savefig(
-            f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_full_umap_batch.png',
+            f'{RESULTS_DIR}/{experiment}/{test_nr}_full_umap_batch.png',
             bbox_inches='tight'
         )
         plt.close()
@@ -386,6 +405,6 @@ for experiment in experiments:
                 show=False
             )
             plt.savefig(
-                f'../tranvae_benchmarks/batchwise/semi/{experiment}/{test_nr}_full_umap_{key}.png',
+                f'{RESULTS_DIR}/{experiment}/{test_nr}_full_umap_{key}.png',
                 bbox_inches='tight')
             plt.close()
