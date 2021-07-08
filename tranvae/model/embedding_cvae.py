@@ -13,6 +13,7 @@ class EmbedCVAE(nn.Module):
         self,
         input_dim,
         hidden_layer_sizes,
+        cell_types,
         conditions,
         inject_condition,
         latent_dim,
@@ -21,18 +22,63 @@ class EmbedCVAE(nn.Module):
         dr_rate, 
         beta,
         use_bn,
+        use_ln,
+        landmarks_labeled,
+        landmarks_unlabeled,
     ):
     super(EmbedCVAE, self).__init__()
 
     self.input_dim = input_dim
     self.latent_dim = latent_dim
     self.embedding_dim = embedding_dim
+    self.cell_types = cell_types
+    self.n_cell_types = len(cell_types)
+    self.cell_type_encoder = {
+        k: v for k, v in zip(cell_types, range(len(cell_types)))
+    }
     self.n_conditions = len(conditions)
     self.conditions = conditions
+    self.condition_encoder = {
+        k: v for k, v in zip(conditions, range(len(conditions)))
+    }
     self.inject_condition = inject_condition
     self.use_bn = use_bn
+    self.use_ln = use_ln
     self.recon_loss = recon_loss
     self.hidden_layer_sizes = hidden_layer_sizes
+
+    self.unknown_ct_names = unknown_ct_names
+    if self.unknown_ct_names is not None:
+        for unknown_ct in self.unknown_ct_names:
+            self.cell_type_encoder[unknown_ct] = -1
+    self.landmarks_labeled = (
+        {"mean": None, "q": None} 
+        if landmarks_labeled is None 
+        else landmarks_labeled
+    )
+    self.landmarks_unlabeled = (
+        {"mean": None, "q": None} 
+        if landmarks_unlabeled is None 
+        else landmarks_unlabeled
+    )
+    self.new_landmarks = None
+
+    if self.landmarks_labeled["mean"] is not None:
+        # Save indices of possible new landmarks to train
+        self.new_landmarks = []
+        for idx in range(self.n_cell_types - len(self.landmarks_labeled["mean"])):
+            self.new_landmarks.append(len(self.landmarks_labeled["mean"]) + idx)
+
+    self.dr_rate = dr_rate
+    if self.dr_rate > 0:
+        self.use_dr = True
+    else:
+        self.use_dr = False
+
+    if recon_loss in ["nb", "zinb"]:
+        self.theta = torch.nn.Parameter(torch.randn(self.input_dim, self.n_conditions))
+    else:
+        self.theta = None
 
     encoder_layer_sizes = self.hidden_layer_sizes.copy()
     encoder_layer_sizes.insert(0, self.input_dim)
@@ -69,14 +115,23 @@ class EmbedCVAE(nn.Module):
         x=None,
         batch=None,
         sizefactor=None,
+        celltypes=None,
         labeled=None,
     ):
+        batch_embedding = self.embedding(batch)
         x_log = torch.log(1 + x)
         if self.recon_loss == 'mse':
             x_log = x
-        z1_mean, z1_log_var = self.encoder(x_log, batch)
-        latent = self.sampling(z1_mean, z1_log_var)
-        outputs = self.decoder(z1, batch)
+        if 'encoder' in self.inject_condition:
+            z1_mean, z1_log_var = self.encoder(x_log, batch_embedding)
+        else:
+            z1_mean, z1_log_var = self.encoder(x_log, batch=None)
+        z1 = self.sampling(z1_mean, z1_log_var)
+
+        if 'decoder' in self.inject_condition:
+            outputs = self.decoder(z1, batch_embedding)
+        else:
+            outputs = self.decoder(z1, batch=None)
 
         if self.recon_loss == "mse":
             recon_x, y1 = outputs
@@ -103,6 +158,7 @@ class EmbedCVAE(nn.Module):
                 theta=dispersion, 
                 pi=dec_dropout
             ).sum(dim=-1).mean()
+            
         elif self.recon_loss == "nb":
             dec_mean_gamma, y1 = outputs
             size_factor_view = (
@@ -124,6 +180,74 @@ class EmbedCVAE(nn.Module):
                 mu=dec_mean, 
                 theta=dispersion
             ).sum(dim=-1).mean()
+
+        z1_var = torch.exp(z1_log_var) + 1e-4
+        kl_div = kl_divergence(
+            Normal(z1_mean, torch.sqrt(z1_var)),
+            Normal(torch.zeros_like(z1_mean), torch.ones_like(z1_var))
+        ).sum(dim=1).mean()
+
+        mmd_loss = torch.tensor(0.0, device=z1.device)
+        if self.use_mmd:
+            mmd_calculator = mmd(self.n_conditions, self.beta, self.mmd_boundary)
+            if self.mmd_on == "z":
+                mmd_loss = mmd_calculator(z1, batch)
+            else:
+                mmd_loss = mmd_calculator(y1, batch)
+
+        return z1, recon_loss, kl_div, mmd_loss
+
+    def classify(
+        self, 
+        x, 
+        c=None, 
+        landmark=False, 
+        classes_list=None, 
+        metric="dist"
+    ):
+        if landmark:
+            latent = x
+        else:
+            latent = self.get_latent(x,c)
+
+        dists = euclidean_dist(latent, self.landmarks_labeled["mean"][classes_list, :])
+
+        if metric == "dist":
+            weighted_distances = F.softmax(-dists, dim=1)
+            probs, preds = torch.max(weighted_distances, dim=1)
+            preds = classes_list[preds]
+        elif metric == "seurat":
+            dists_t = 1 - (dists.T / dists.max(1)[0]).T
+            prob = 1 - torch.exp(-dists_t / 4)
+            prob = (prob.T / prob.sum(1)).T
+            probs, preds = torch.max(prob, dim=1)
+            preds = classes_list[preds]
+        elif metric == "overlap":
+            quantiles_view = (
+                self
+                .landmarks_labeled["q"]
+                .unsqueeze(0)
+                .expand(
+                    dists.size(0), 
+                    dists.size(1)
+                )
+            )
+
+            #overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
+            #overlap = 1 - (quantiles_view - overlap / quantiles_view)
+
+            overlap = dists / quantiles_view
+            overlap = (overlap.T / overlap.max(1)[0]).T
+            overlap = 1 - overlap
+
+            overlap = (overlap.T / overlap.sum(1)).T
+            probs, preds = torch.max(overlap, dim=1)
+            preds = classes_list[preds]
+        else:
+            assert False, f"'{metric}' is not a available as a loss function please choose " \
+                          f"between 'exp', 'var' or 'seurat'!"
+
+        return preds, probs
 
     def sampling(self, mu, log_var):
         """Samples from standard Normal distribution and applies re-parametrization trick.
@@ -170,13 +294,13 @@ class Encoder(nn.Module):
         use_ln: bool,
         use_dr: bool,
         dr_rate: float,
-        num_classes: int = None
+        embedding_dim: int = None
     ):
         super().__init__()
 
-        self.n_classes = 0
-        if num_classes is not None:
-            self.n_classes = num_classes
+        self.embedding_dim = 0
+        if embedding_dim is not None:
+            self.embedding_dim = embedding_dim
         self.FC = None
 
         if len(layer_sizes) > 1:
@@ -190,7 +314,7 @@ class Encoder(nn.Module):
                         "\tInput Layer in, out and cond:", 
                         in_size, 
                         out_size, 
-                        self.n_classes
+                        self.embedding_dim
                     )
                     (
                         self
@@ -200,7 +324,7 @@ class Encoder(nn.Module):
                             module=CondLayers(
                                 in_size,
                                 out_size,
-                                self.n_classes,
+                                self.embedding_dim,
                                 bias=True
                             )
                         )
@@ -257,7 +381,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, batch=None):
         if batch is not None:
-            batch = one_hot_encoder(batch, n_cls=self.n_classes)
+        #    batch = one_hot_encoder(batch, n_cls=self.n_classes)
             x = torch.cat((x, batch), dim=-1)
         if self.FC is not None:
             x = self.FC(x)
@@ -303,9 +427,9 @@ class Decoder(nn.Module):
         super().__init__()
         self.use_dr = use_dr
         self.recon_loss = recon_loss
-        self.n_classes = 0
-        if num_classes is not None:
-            self.n_classes = num_classes
+        self.embedding_dim = 0
+        if embedding_dim is not None:
+            self.embedding_dim = embedding_dim
         layer_sizes = [latent_dim] + layer_sizes
         print("Decoder Architecture:")
         # Create first Decoder layer
@@ -314,7 +438,7 @@ class Decoder(nn.Module):
             "\tFirst Layer in, out and cond: ", 
             layer_sizes[0], 
             layer_sizes[1], 
-            self.n_classes
+            self.embedding_dim
         )
 
         (
@@ -325,7 +449,7 @@ class Decoder(nn.Module):
                 module=CondLayers(
                     layer_sizes[0],
                     layer_sizes[1], 
-                    self.n_classes, 
+                    self.embedding_dim, 
                     bias=False
                 )
             )
