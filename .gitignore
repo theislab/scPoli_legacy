@@ -1,6 +1,7 @@
 datasets/
 data/
 tranvae_benchmarks/
+seurat_benchmarks/
 *.egg-info/
 .idea/
 __pycache__/
