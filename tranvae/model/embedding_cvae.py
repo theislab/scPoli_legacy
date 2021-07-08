@@ -14,6 +14,7 @@ class EmbedCVAE(nn.Module):
         input_dim,
         hidden_layer_sizes,
         cell_types,
+        unknown_ct_names,
         conditions,
         inject_condition,
         latent_dim,
@@ -158,7 +159,7 @@ class EmbedCVAE(nn.Module):
                 theta=dispersion, 
                 pi=dec_dropout
             ).sum(dim=-1).mean()
-            
+
         elif self.recon_loss == "nb":
             dec_mean_gamma, y1 = outputs
             size_factor_view = (
