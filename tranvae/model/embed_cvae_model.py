@@ -8,7 +8,7 @@ from scarches.models.base._utils import _validate_var_names
 from scarches.models.base._base import BaseMixin
 
 from .embedding_cvae import EmbedCVAE
-from tranvae.trainers.embed_trainer import EmbedCVAETrainer
+from ..trainers.embed import EmbedCVAETrainer
 
 
 class EMBEDCVAE(BaseMixin):
@@ -51,6 +51,7 @@ class EMBEDCVAE(BaseMixin):
         condition_key: str = None,
         conditions: Optional[list] = None,
         inject_condition: Optional[list] = None,
+        embedding_dim: Optional[int] = 10,
         cell_type_keys: Optional[list] = None,
         cell_types: Optional[dict] = None,
         unknown_ct_names: Optional[list] = None,
@@ -110,6 +111,7 @@ class EMBEDCVAE(BaseMixin):
 
         self.hidden_layer_sizes_ = hidden_layer_sizes
         self.inject_condition_ = inject_condition
+        self.embedding_dim_ = embedding_dim
         self.latent_dim_ = latent_dim
         self.dr_rate_ = dr_rate
         self.use_mmd_ = use_mmd
@@ -131,6 +133,7 @@ class EMBEDCVAE(BaseMixin):
             conditions=self.conditions_,
             cell_types=model_cell_types,
             inject_condition=self.inject_condition_,
+            embedding_dim = self.embedding_dim_,
             unknown_ct_names=self.unknown_ct_names_,
             landmarks_labeled=self.landmarks_labeled_,
             landmarks_unlabeled=self.landmarks_unlabeled_,

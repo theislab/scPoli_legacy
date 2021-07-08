@@ -27,89 +27,90 @@ class EmbedCVAE(nn.Module):
         landmarks_labeled,
         landmarks_unlabeled,
     ):
-    super(EmbedCVAE, self).__init__()
+        super().__init__()
 
-    self.input_dim = input_dim
-    self.latent_dim = latent_dim
-    self.embedding_dim = embedding_dim
-    self.cell_types = cell_types
-    self.n_cell_types = len(cell_types)
-    self.cell_type_encoder = {
-        k: v for k, v in zip(cell_types, range(len(cell_types)))
-    }
-    self.n_conditions = len(conditions)
-    self.conditions = conditions
-    self.condition_encoder = {
-        k: v for k, v in zip(conditions, range(len(conditions)))
-    }
-    self.inject_condition = inject_condition
-    self.use_bn = use_bn
-    self.use_ln = use_ln
-    self.recon_loss = recon_loss
-    self.hidden_layer_sizes = hidden_layer_sizes
+        self.input_dim = input_dim
+        self.latent_dim = latent_dim
+        self.embedding_dim = embedding_dim
+        self.cell_types = cell_types
+        self.n_cell_types = len(cell_types)
+        self.cell_type_encoder = {
+            k: v for k, v in zip(cell_types, range(len(cell_types)))
+        }
+        self.n_conditions = len(conditions)
+        self.conditions = conditions
+        self.condition_encoder = {
+            k: v for k, v in zip(conditions, range(len(conditions)))
+        }
+        self.inject_condition = inject_condition
+        self.use_bn = use_bn
+        self.use_ln = use_ln
+        self.use_mmd = False
+        self.recon_loss = recon_loss
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.freeze = False
+        self.unknown_ct_names = unknown_ct_names
+        if self.unknown_ct_names is not None:
+            for unknown_ct in self.unknown_ct_names:
+                self.cell_type_encoder[unknown_ct] = -1
+        self.landmarks_labeled = (
+            {"mean": None, "q": None} 
+            if landmarks_labeled is None 
+            else landmarks_labeled
+        )
+        self.landmarks_unlabeled = (
+            {"mean": None, "q": None} 
+            if landmarks_unlabeled is None 
+            else landmarks_unlabeled
+        )
+        self.new_landmarks = None
 
-    self.unknown_ct_names = unknown_ct_names
-    if self.unknown_ct_names is not None:
-        for unknown_ct in self.unknown_ct_names:
-            self.cell_type_encoder[unknown_ct] = -1
-    self.landmarks_labeled = (
-        {"mean": None, "q": None} 
-        if landmarks_labeled is None 
-        else landmarks_labeled
-    )
-    self.landmarks_unlabeled = (
-        {"mean": None, "q": None} 
-        if landmarks_unlabeled is None 
-        else landmarks_unlabeled
-    )
-    self.new_landmarks = None
+        if self.landmarks_labeled["mean"] is not None:
+            # Save indices of possible new landmarks to train
+            self.new_landmarks = []
+            for idx in range(self.n_cell_types - len(self.landmarks_labeled["mean"])):
+                self.new_landmarks.append(len(self.landmarks_labeled["mean"]) + idx)
 
-    if self.landmarks_labeled["mean"] is not None:
-        # Save indices of possible new landmarks to train
-        self.new_landmarks = []
-        for idx in range(self.n_cell_types - len(self.landmarks_labeled["mean"])):
-            self.new_landmarks.append(len(self.landmarks_labeled["mean"]) + idx)
+        self.dr_rate = dr_rate
+        if self.dr_rate > 0:
+            self.use_dr = True
+        else:
+            self.use_dr = False
 
-    self.dr_rate = dr_rate
-    if self.dr_rate > 0:
-        self.use_dr = True
-    else:
-        self.use_dr = False
+        if recon_loss in ["nb", "zinb"]:
+            self.theta = torch.nn.Parameter(torch.randn(self.input_dim, self.n_conditions))
+        else:
+            self.theta = None
 
-    if recon_loss in ["nb", "zinb"]:
-        self.theta = torch.nn.Parameter(torch.randn(self.input_dim, self.n_conditions))
-    else:
-        self.theta = None
+        encoder_layer_sizes = self.hidden_layer_sizes.copy()
+        encoder_layer_sizes.insert(0, self.input_dim)
+        decoder_layer_sizes = self.hidden_layer_sizes.copy()
+        decoder_layer_sizes.reverse()
+        decoder_layer_sizes.append(self.input_dim)
 
-    encoder_layer_sizes = self.hidden_layer_sizes.copy()
-    encoder_layer_sizes.insert(0, self.input_dim)
-    decoder_layer_sizes = self.hidden_layer_sizes.copy()
-    decoder_layer_sizes.reverse()
-    decoder_layer_sizes.append(self.input_dim)
-
-    self.embedding = nn.Embedding(
-        self.n_conditions,
-        self.embedding_dim,
-    )
-    self.encoder = Encoder(
-        encoder_layer_sizes,
-        self.latent_dim,
-        self.use_bn,
-        self.use_ln,
-        self.use_dr,
-        self.dr_rate,
-        self.n_conditions
-    )
-    self.decoder = Decoder(
-        decoder_layer_sizes,
-        self.latent_dim,
-        self.recon_loss,
-        self.use_bn,
-        self.use_ln,
-        self.use_dr,
-        self.dr_rate,
-        self.n_conditions
-    )
+        self.embedding = nn.Embedding(
+            self.n_conditions,
+            self.embedding_dim,
+        )
+        self.encoder = Encoder(
+            encoder_layer_sizes,
+            self.latent_dim,
+            self.use_bn,
+            self.use_ln,
+            self.use_dr,
+            self.dr_rate,
+            self.embedding_dim,
+        )
+        self.decoder = Decoder(
+            decoder_layer_sizes,
+            self.latent_dim,
+            self.recon_loss,
+            self.use_bn,
+            self.use_ln,
+            self.use_dr,
+            self.dr_rate,
+            self.embedding_dim,
+        )
 
     def forward(
         self,
@@ -265,6 +266,30 @@ class EmbedCVAE(nn.Module):
         """
         var = torch.exp(log_var) + 1e-4
         return Normal(mu, var.sqrt()).rsample()
+
+    def get_latent(self, x, c=None, mean=False):
+        """Map `x` in to the latent space. This function will feed data in encoder  and return  z for each sample in
+           data.
+           Parameters
+           ----------
+           x:  torch.Tensor
+                Torch Tensor to be mapped to latent space. `x` has to be in shape [n_obs, input_dim].
+           c: torch.Tensor
+                Torch Tensor of condition labels for each sample.
+           mean: boolean
+           Returns
+           -------
+           Returns Torch Tensor containing latent space encoding of 'x'.
+        """
+        x_ = torch.log(1 + x)
+        if self.recon_loss == 'mse':
+            x_ = x
+        embed_c = self.embedding(c)
+        z_mean, z_log_var = self.encoder(x_, c)
+        latent = self.sampling(z_mean, z_log_var)
+        if mean:
+            return z_mean
+        return latent
 
 class Encoder(nn.Module):
     """ScArches Encoder class. Constructs the encoder sub-network of TRVAE and CVAE. It will transform primary space
@@ -423,7 +448,7 @@ class Decoder(nn.Module):
         use_ln: bool,
         use_dr: bool,
         dr_rate: float,
-        num_classes: int = None
+        embedding_dim: int = None
     ):
         super().__init__()
         self.use_dr = use_dr
@@ -536,6 +561,7 @@ class Decoder(nn.Module):
                                     elementwise_affine=False
                                 )
                             )
+                        )
                     (
                         self
                         .HiddenL
@@ -593,7 +619,7 @@ class Decoder(nn.Module):
     def forward(self, z, batch=None):
         # Add Condition Labels to Decoder Input
         if batch is not None:
-            batch = one_hot_encoder(batch, n_cls=self.n_classes)
+            #batch = one_hot_encoder(batch, n_cls=self.n_classes)
             z_cat = torch.cat((z, batch), dim=-1)
             dec_latent = self.FirstL(z_cat)
         else:
