@@ -369,6 +369,8 @@ class EMBEDCVAE(BaseMixin):
             'beta': dct['beta_'],
             'use_bn': dct['use_bn_'],
             'use_ln': dct['use_ln_'],
+            'embedding_dim': dct['embedding_dim_'],
+            'inject_condition': dct['inject_condition_']
         }
 
         return init_params
@@ -463,21 +465,39 @@ class EMBEDCVAE(BaseMixin):
 
         init_params['labeled_indices'] = labeled_indices
         init_params['unknown_ct_names'] = unknown_ct_names
-
         new_model = cls(adata, **init_params)
         new_model._load_expand_params_from_dict(model_state_dict)
 
-        if freeze:
-            new_model.model.freeze = True
-            for name, p in new_model.model.named_parameters():
-                p.requires_grad = False
-                if 'theta' in name:
-                    p.requires_grad = True
-                if freeze_expression:
-                    if 'cond_L.weight' in name:
-                        p.requires_grad = True
-                else:
-                    if "L0" in name or "N0" in name:
-                        p.requires_grad = True
+        #if freeze:
+            # new_model.model.freeze = True
+            # for name, p in new_model.model.named_parameters():
+            #     p.requires_grad = False
+            #     if 'theta' in name:
+            #         p.requires_grad = True
+            #     if freeze_expression:
+            #         if 'cond_L.weight' in name:
+            #             p.requires_grad = True
+            #     else:
+            #         if "L0" in name or "N0" in name:
+            #             p.requires_grad = True
 
         return new_model
+
+    def _load_expand_params_from_dict(self, state_dict):
+        load_state_dict = state_dict.copy()
+
+        device = next(self.model.parameters()).device
+
+        new_state_dict = self.model.state_dict()
+        for key, load_ten in load_state_dict.items():
+            new_ten = new_state_dict[key]
+            if new_ten.size() == load_ten.size():
+                continue
+            # new embedding in dictionary
+            else:
+                load_ten = load_ten.to(device)
+                dim_diff = new_ten.size()[0] - load_ten.size()[0]
+                fixed_ten = torch.cat([load_ten, new_ten[-dim_diff:, ...]], dim=0)
+                load_state_dict[key] = fixed_ten
+
+        self.model.load_state_dict(load_state_dict)

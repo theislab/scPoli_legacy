@@ -93,6 +93,12 @@ class EmbedCVAE(nn.Module):
             self.n_conditions,
             self.embedding_dim,
         )
+
+        print(
+            "Embedding dictionary:\n", 
+            f'\tNum conditions: {self.n_conditions}\n', 
+            f'\tEmbedding dim: {self.embedding_dim}',
+        )
         self.encoder = Encoder(
             encoder_layer_sizes,
             self.latent_dim,
