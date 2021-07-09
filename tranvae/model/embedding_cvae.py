@@ -7,6 +7,7 @@ from typing import Optional
 
 from scarches.models.trvae._utils import one_hot_encoder
 from scarches.models.trvae.losses import mse, zinb, nb
+from ._utils import euclidean_dist
 
 class EmbedCVAE(nn.Module):
     def __init__(
@@ -99,7 +100,7 @@ class EmbedCVAE(nn.Module):
             self.use_ln,
             self.use_dr,
             self.dr_rate,
-            self.embedding_dim,
+            self.embedding_dim if 'encoder' in self.inject_condition else None,
         )
         self.decoder = Decoder(
             decoder_layer_sizes,
@@ -109,7 +110,7 @@ class EmbedCVAE(nn.Module):
             self.use_ln,
             self.use_dr,
             self.dr_rate,
-            self.embedding_dim,
+            self.embedding_dim if 'decoder' in self.inject_condition else None,
         )
 
     def forward(
@@ -284,8 +285,12 @@ class EmbedCVAE(nn.Module):
         x_ = torch.log(1 + x)
         if self.recon_loss == 'mse':
             x_ = x
-        embed_c = self.embedding(c)
-        z_mean, z_log_var = self.encoder(x_, c)
+        if 'encoder' in self.inject_condition:
+            c = c.type(torch.cuda.LongTensor)
+            embed_c = self.embedding(c)
+            z_mean, z_log_var = self.encoder(x_, embed_c)
+        else:
+            z_mean, z_log_var = self.encoder(x_)
         latent = self.sampling(z_mean, z_log_var)
         if mean:
             return z_mean
