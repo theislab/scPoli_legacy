@@ -191,23 +191,23 @@ for experiment in experiments:
         adata_latent = sc.AnnData(data_latent)
         adata_latent.obs['batch'] = target_adata.obs[condition_key].tolist()
         results_dict = tranvae.classify(metric=class_metric)
-        for i in range(len(cell_type_key)):
-            preds = results_dict[i]['preds']
-            probs = results_dict[i]['probs']
+        for cell_key in cell_type_key:
+            preds = results_dict[cell_key]['preds']
+            probs = results_dict[cell_key]['probs']
 
             text_file_q = open(
                 os.path.expanduser(
-                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_acc_report_{i}.txt'),
+                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_acc_report_{cell_key}.txt'),
                 "w")
             n = text_file_q.write(classification_report(
-                y_true=target_adata.obs[cell_type_key[i]],
+                y_true=target_adata.obs[cell_key],
                 y_pred=preds,
-                labels=np.array(target_adata.obs[cell_type_key[i]].unique().tolist())
+                labels=np.array(target_adata.obs[cell_key].unique().tolist())
             ))
             text_file_q.close()
 
-            correct_probs = probs[preds == target_adata.obs[cell_type_key[i]]]
-            incorrect_probs = probs[preds != target_adata.obs[cell_type_key[i]]]
+            correct_probs = probs[preds == target_adata.obs[cell_key]]
+            incorrect_probs = probs[preds != target_adata.obs[cell_key]]
             data = [correct_probs, incorrect_probs]
             fig, ax = plt.subplots()
             ax.set_title('Default violin plot')
@@ -216,14 +216,14 @@ for experiment in experiments:
             labels = ['Correct', 'Incorrect']
             set_axis_style(ax, labels)
             plt.savefig(
-                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_uncertainty_{i}.png'),
+                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_uncertainty_{cell_key}.png'),
                 bbox_inches='tight')
 
             checks = np.array(len(target_adata) * ['incorrect'])
-            checks[preds == target_adata.obs[cell_type_key[i]]] = 'correct'
-            adata_latent.obs[cell_type_key[i]] = target_adata.obs[cell_type_key[i]].tolist()
-            adata_latent.obs[f'{cell_type_key[i]}_pred'] = preds.tolist()
-            adata_latent.obs[f'{cell_type_key[i]}_bool'] = checks.tolist()
+            checks[preds == target_adata.obs[cell_key]] = 'correct'
+            adata_latent.obs[cell_key] = target_adata.obs[cell_key].tolist()
+            adata_latent.obs[f'{cell_key}_pred'] = preds.tolist()
+            adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
 
         adata_latent.write_h5ad(filename=os.path.expanduser(
             f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_adata.h5ad'))
@@ -261,16 +261,16 @@ for experiment in experiments:
         adata_latent = sc.AnnData(data_latent)
         adata_latent.obs['batch'] = adata.obs[condition_key].tolist()
         results_dict = tranvae.classify(adata.X, adata.obs[condition_key], metric=class_metric)
-        for i in range(len(cell_type_key)):
-            preds = results_dict[i]['preds']
-            probs = results_dict[i]['probs']
+        for cell_key in cell_type_key:
+            preds = results_dict[cell_key]['preds']
+            probs = results_dict[cell_key]['probs']
             text_file_f = open(
-                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_acc_report_{i}.txt'), "w")
-            n = text_file_f.write(classification_report(y_true=adata.obs[cell_type_key[i]], y_pred=preds))
+                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_acc_report_{cell_key}.txt'), "w")
+            n = text_file_f.write(classification_report(y_true=adata.obs[cell_key], y_pred=preds))
             text_file_f.close()
 
-            correct_probs = probs[preds == adata.obs[cell_type_key[i]]]
-            incorrect_probs = probs[preds != adata.obs[cell_type_key[i]]]
+            correct_probs = probs[preds == adata.obs[cell_key]]
+            incorrect_probs = probs[preds != adata.obs[cell_key]]
             data = [correct_probs, incorrect_probs]
             fig, ax = plt.subplots()
             ax.set_title('Default violin plot')
@@ -280,14 +280,14 @@ for experiment in experiments:
             set_axis_style(ax, labels)
             plt.savefig(
                 os.path.expanduser(
-                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_uncertainty_{i}.png'),
+                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_uncertainty_{cell_key}.png'),
                 bbox_inches='tight')
 
             checks = np.array(len(adata) * ['incorrect'])
-            checks[preds == adata.obs[cell_type_key[i]]] = 'correct'
-            adata_latent.obs[cell_type_key[i]] = adata.obs[cell_type_key[i]].tolist()
-            adata_latent.obs[f'{cell_type_key[i]}_pred'] = preds.tolist()
-            adata_latent.obs[f'{cell_type_key[i]}_bool'] = checks.tolist()
+            checks[preds == adata.obs[cell_key]] = 'correct'
+            adata_latent.obs[cell_key] = adata.obs[cell_key].tolist()
+            adata_latent.obs[f'{cell_key}_pred'] = preds.tolist()
+            adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
 
         adata_latent.write_h5ad(filename=os.path.expanduser(
             f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_adata.h5ad'))

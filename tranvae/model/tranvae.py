@@ -49,9 +49,17 @@ class tranVAE(trVAE):
         self.cell_type_encoder = {k: v for k, v in zip(self.cell_types, range(len(self.cell_types)))}
         new_landmark = self.landmarks_unlabeled["mean"][landmarks].mean(0).unsqueeze(0)
         new_landmark_q = torch.tensor(
-            1.0,
+            0.0,
             device=self.landmarks_unlabeled["q"].device, requires_grad=False
-        ).unsqueeze(0)
+        ).unsqueeze(0).unsqueeze(0)
+        for landmark in landmarks:
+            cover = torch.cdist(
+                new_landmark,
+                self.landmarks_unlabeled["mean"][landmark].unsqueeze(0)
+            ) + self.landmarks_unlabeled["q"][landmark].unsqueeze(0)
+            if cover > new_landmark_q:
+                new_landmark_q = cover
+
         self.landmarks_labeled["mean"] = torch.cat(
             (self.landmarks_labeled["mean"], new_landmark),
             dim=0

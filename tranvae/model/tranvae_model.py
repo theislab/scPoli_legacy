@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import scanpy as sc
 
 from anndata import AnnData
 from typing import Optional, Union
@@ -59,7 +60,7 @@ class TRANVAE(BaseMixin):
         hidden_layer_sizes: list = [256, 64],
         latent_dim: int = 10,
         dr_rate: float = 0.05,
-        use_mmd: bool = True,
+        use_mmd: bool = False,
         mmd_on: str = 'z',
         mmd_boundary: Optional[int] = None,
         recon_loss: Optional[str] = 'nb',
@@ -71,6 +72,8 @@ class TRANVAE(BaseMixin):
 
         self.condition_key_ = condition_key
         self.cell_type_keys_ = cell_type_keys
+        if unknown_ct_names is not None and type(unknown_ct_names) is not list:
+            raise TypeError(f"Parameter 'unknown_ct_names' has to be list not {type(unknown_ct_names)}")
         self.unknown_ct_names_ = unknown_ct_names
 
         if labeled_indices is None:
@@ -260,7 +263,7 @@ class TRANVAE(BaseMixin):
 
         x = torch.tensor(x, device='cpu')
 
-        results = list()
+        results = dict()
         for cell_type_key in self.cell_type_keys_:
             landmarks_idx = list()
             for i, key in enumerate(self.cell_types_.keys()):
@@ -297,22 +300,16 @@ class TRANVAE(BaseMixin):
             full_pred_names = []
 
             for idx, pred in enumerate(full_pred):
-                if landmark:
-                    if full_prob[idx] > threshold:
-                        full_pred_names.append(inv_ct_encoder[pred] + ' Landmark')
-                    else:
-                        full_pred_names.append(f"Unknown Landmark {idx}")
+                if full_prob[idx] > threshold:
+                    full_pred_names.append(inv_ct_encoder[pred])
                 else:
-                    if full_prob[idx] > threshold:
-                        full_pred_names.append(inv_ct_encoder[pred])
-                    else:
-                        full_pred_names.append('Unknown')
+                    full_pred_names.append(f'nan')
 
-            results.append({'preds': np.array(full_pred_names), 'probs': full_prob})
+            results[cell_type_key] = {'preds': np.array(full_pred_names), 'probs': full_prob}
 
         return results
 
-    def add_new_cell_type(self, cell_type_name, landmarks):
+    def add_new_cell_type(self, cell_type_name, obs_key, landmarks):
         """
 
         Parameters
@@ -329,19 +326,40 @@ class TRANVAE(BaseMixin):
         self.model.add_new_cell_type(cell_type_name, landmarks)
         self.landmarks_labeled_ = self.model.landmarks_labeled
         self.landmarks_unlabeled_ = self.model.landmarks_unlabeled
+        self.cell_types_[cell_type_name] = [obs_key]
 
-    def get_landmarks_info(self, metric="dist", threshold=0):
-        landmarks_l = self.landmarks_labeled_["mean"].detach().cpu().numpy()
-        landmarks_u = self.landmarks_unlabeled_["mean"].detach().cpu().numpy()
+    def get_landmarks_info(self, landmark_set='l', metric="dist", threshold=0):
+        if landmark_set == 'l':
+            landmarks = self.landmarks_labeled_["mean"].detach().cpu().numpy()
+            batch_name = "Landmark-Set Labeled"
+        elif landmark_set == 'u':
+            landmarks = self.landmarks_unlabeled_["mean"].detach().cpu().numpy()
+            batch_name = "Landmark-Set Unlabeled"
+        else:
+            print(f"Parameter 'landmark_set' has either to be 'l' for labeled landmark set or 'u' "
+                  f"for the unlabeled landmark set. But given value was {landmark_set}")
+            return
+        landmarks_info = sc.AnnData(landmarks)
+        landmarks_info.obs[self.condition_key_] = np.array((landmarks.shape[0] * [batch_name]))
 
-        l_pred, l_prob = self.classify(landmarks_l, landmark=True, metric=metric, threshold=0)
-        u_pred, u_prob = self.classify(landmarks_u, landmark=True, metric=metric, threshold=threshold)
-        x_info = np.concatenate((landmarks_l, landmarks_u))
-        label_info = np.concatenate((l_pred, u_pred))
-        prob_info = np.concatenate((np.ones_like(l_prob), u_prob))
-        batch_info = np.array((landmarks_l.shape[0] * ['Landmark Labeled'] +
-                               landmarks_u.shape[0] * ['Landmark Unlabeled']))
-        return x_info, label_info, batch_info, prob_info
+        results = self.classify(landmarks, landmark=True, metric=metric, threshold=threshold)
+        for cell_type_key in self.cell_type_keys_:
+            if landmark_set == 'l':
+                truth_names = list()
+                for key in self.cell_types_.keys():
+                    if cell_type_key in self.cell_types_[key]:
+                        truth_names.append(key)
+                    else:
+                        truth_names.append('nan')
+            else:
+                truth_names = list()
+                for i in range(landmarks.shape[0]):
+                    truth_names.append(f'{i}')
+
+            landmarks_info.obs[cell_type_key] = np.array(truth_names)
+            landmarks_info.obs[cell_type_key + '_pred'] = results[cell_type_key]["preds"]
+            landmarks_info.obs[cell_type_key + '_prob'] = results[cell_type_key]["probs"]
+        return landmarks_info
 
     @classmethod
     def _get_init_params_from_dict(cls, dct):
