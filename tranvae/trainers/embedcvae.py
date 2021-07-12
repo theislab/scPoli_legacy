@@ -228,7 +228,7 @@ class EmbedCVAETrainer(Trainer):
                     for idx_class in range(len(torch.stack(self.landmarks_unlabeled).squeeze())):
                         if idx_class in y_hat:
                             quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0).unsqueeze(0))
-                            quantiles.append(torch.tensor(0.0, device=self.device)).unsqueeze(0)
+                            quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
                     self.landmarks_unlabeled_q = torch.stack(quantiles)
 
     def on_epoch_begin (self, lr, eps):
@@ -256,6 +256,7 @@ class EmbedCVAETrainer(Trainer):
 
         # Calculate classifier loss for labeled/unlabeled data
         label_categories = total_batch["labeled"].unique().tolist()
+        print(self.device)
         landmark_loss = torch.tensor(0.0, device=self.device)
         unlabeled_loss = torch.tensor(0.0, device=self.device)
         labeled_loss = torch.tensor(0.0, device=self.device)
@@ -390,7 +391,7 @@ class EmbedCVAETrainer(Trainer):
     def landmark_labeled_loss(self, latent, landmarks, labels):
         unique_labels = torch.unique(labels, sorted=True)
         distances = euclidean_dist(latent, landmarks)
-        loss = torch.Tensor(0.0, device=self.device)
+        loss = torch.tensor(0.0, device=self.device)
 
         # Basic distance loss works with hierarchy
         if self.labeled_loss_metric == "dist":
