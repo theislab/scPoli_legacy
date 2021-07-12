@@ -256,7 +256,6 @@ class EmbedCVAETrainer(Trainer):
 
         # Calculate classifier loss for labeled/unlabeled data
         label_categories = total_batch["labeled"].unique().tolist()
-        print(self.device)
         landmark_loss = torch.tensor(0.0, device=self.device)
         unlabeled_loss = torch.tensor(0.0, device=self.device)
         labeled_loss = torch.tensor(0.0, device=self.device)
