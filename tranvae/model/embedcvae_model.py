@@ -7,8 +7,8 @@ from typing import Optional, Union
 from scarches.models.base._utils import _validate_var_names
 from scarches.models.base._base import BaseMixin
 
-from .embedding_cvae import EmbedCVAE
-from ..trainers.embed import EmbedCVAETrainer
+from .embedcvae import EmbedCVAE
+from ..trainers.embedcvae import EmbedCVAETrainer
 
 
 class EMBEDCVAE(BaseMixin):
