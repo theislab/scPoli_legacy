@@ -227,9 +227,8 @@ class EmbedCVAETrainer(Trainer):
                     quantiles = []
                     for idx_class in range(len(torch.stack(self.landmarks_unlabeled).squeeze())):
                         if idx_class in y_hat:
-                            quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0))
-                        else:
-                            quantiles.append(torch.tensor(0.0, device=self.device))
+                            quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0).unsqueeze(0))
+                            quantiles.append(torch.tensor(0.0, device=self.device)).unsqueeze(0)
                     self.landmarks_unlabeled_q = torch.stack(quantiles)
 
     def on_epoch_begin (self, lr, eps):
@@ -257,9 +256,9 @@ class EmbedCVAETrainer(Trainer):
 
         # Calculate classifier loss for labeled/unlabeled data
         label_categories = total_batch["labeled"].unique().tolist()
-        landmark_loss = torch.tensor(0, device=self.device)
-        unlabeled_loss = torch.tensor(0, device=self.device)
-        labeled_loss = torch.tensor(0, device=self.device)
+        landmark_loss = torch.tensor(0.0, device=self.device)
+        unlabeled_loss = torch.tensor(0.0, device=self.device)
+        labeled_loss = torch.tensor(0.0, device=self.device)
         if self.epoch >= self.pretraining_epochs:
             # Calculate landmark loss for unlabeled data
             if self.landmarks_unlabeled is not None and self.unlabeled_weight > 0:
@@ -349,9 +348,9 @@ class EmbedCVAETrainer(Trainer):
             quantiles = []
             for idx_class in range(len(landmarks)):
                 if idx_class in y_hat:
-                    quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0))
+                    quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0)).unsqueeze(0)
                 else:
-                    quantiles.append(torch.tensor(0.0, device=self.device))
+                    quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
             self.landmarks_unlabeled_q = torch.stack(quantiles)
 
         self.model.landmarks_labeled["mean"] = self.landmarks_labeled
@@ -374,7 +373,7 @@ class EmbedCVAETrainer(Trainer):
                     indices = labels.eq(value).nonzero(as_tuple=False)[:, 0]
                     landmark = latent[indices, :].mean(0).unsqueeze(0)
                     dist = euclidean_dist(latent[indices], landmark)
-                    landmark_q = torch.quantile(dist, self.quantile).unsqueeze(0)
+                    landmark_q = torch.quantile(dist, self.quantile, dim=0).unsqueeze(0)
                     landmarks_mean = torch.cat(
                         [landmarks_mean, landmark]) if landmarks_mean is not None else landmark
                     landmarks_q = torch.cat(
@@ -391,7 +390,7 @@ class EmbedCVAETrainer(Trainer):
     def landmark_labeled_loss(self, latent, landmarks, labels):
         unique_labels = torch.unique(labels, sorted=True)
         distances = euclidean_dist(latent, landmarks)
-        loss = None
+        loss = torch.Tensor(0.0, device=self.device)
 
         # Basic distance loss works with hierarchy
         if self.labeled_loss_metric == "dist":
@@ -400,7 +399,7 @@ class EmbedCVAETrainer(Trainer):
                     continue
                 indices = labels.eq(value).nonzero(as_tuple=False)[:,0]
                 label_loss = distances[indices, value].sum(0) / len(indices)
-                loss = loss + label_loss if loss is not None else label_loss
+                loss += label_loss
 
         # Alternative to distance loss, however may not work with hierarchy
         elif self.labeled_loss_metric == "overlap":
@@ -436,9 +435,9 @@ class EmbedCVAETrainer(Trainer):
                 quantiles = []
                 for idx_class in range(len(landmarks)):
                     if idx_class in y_hat:
-                        quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0))
+                        quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0).unsqueeze(0))
                     else:
-                        quantiles.append(torch.tensor(0.0, device=self.device))
+                        quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
                 self.landmarks_unlabeled_q = torch.stack(quantiles)
 
         if self.unlabeled_loss_metric == "dist":
