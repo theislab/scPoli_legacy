@@ -348,7 +348,7 @@ class EmbedCVAETrainer(Trainer):
             quantiles = []
             for idx_class in range(len(landmarks)):
                 if idx_class in y_hat:
-                    quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0)).unsqueeze(0)
+                    quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0).unsqueeze(0))
                 else:
                     quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
             self.landmarks_unlabeled_q = torch.stack(quantiles)
