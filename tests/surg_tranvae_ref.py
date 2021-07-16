@@ -4,7 +4,7 @@ import torch
 import os
 from scarches.dataset.trvae.data_handling import remove_sparsity
 import matplotlib.pyplot as plt
-from tranvae.model import TRANVAE
+from lataq.model import TRANVAE
 import time
 from sklearn.metrics import classification_report
 
