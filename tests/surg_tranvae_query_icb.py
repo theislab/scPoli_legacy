@@ -195,7 +195,7 @@ for experiment in experiments:
 
         tranvae = TRANVAE.load_query_data(
             adata=target_adata,
-            reference_model=f'{RESULTS_DIR}/{experiment}/{test_nr}_ref_model'),
+            reference_model=f'{RESULTS_DIR}/{experiment}/{test_nr}_ref_model',
             labeled_indices=[],
         )
         q_time = time.time()

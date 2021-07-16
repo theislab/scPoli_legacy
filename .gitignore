@@ -11,3 +11,4 @@ own_tests/
 build/
 dist/
 .ipynb_checkpoints/
+pr/
