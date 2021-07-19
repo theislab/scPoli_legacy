@@ -38,7 +38,7 @@ import torch
 
 import matplotlib.pyplot as plt
 from scarches.dataset.trvae.data_handling import remove_sparsity
-from tranvae.model import TRANVAE
+from lataq.models import TRANVAE
 from sklearn.metrics import classification_report
 
 sc.settings.set_figure_params(dpi=200, frameon=False)
