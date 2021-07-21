@@ -1,3 +1,4 @@
+from typing import Optional
 import torch
 from torch.nn import NLLLoss
 import scanpy as sc
@@ -99,7 +100,6 @@ class LATAQtrainer(Trainer):
         self.best_landmarks_unlabeled = None
         self.best_landmarks_unlabeled_q = None
         self.lndmk_optim = None
-        print(self.landmarks_labeled)
         # Set indices for labeled data
         if labeled_indices is None:
             self.labeled_indices = range(len(adata))
