@@ -99,7 +99,7 @@ class LATAQtrainer(Trainer):
         self.best_landmarks_unlabeled = None
         self.best_landmarks_unlabeled_q = None
         self.lndmk_optim = None
-
+        print(self.landmarks_labeled)
         # Set indices for labeled data
         if labeled_indices is None:
             self.labeled_indices = range(len(adata))
@@ -232,7 +232,7 @@ class LATAQtrainer(Trainer):
                             quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
                     self.landmarks_unlabeled_q = torch.stack(quantiles)
 
-    def on_epoch_begin (self, lr, eps):
+    def on_epoch_begin(self, lr, eps):
         if self.epoch == self.pretraining_epochs:
             self.initialize_landmarks()
             if 0 in self.train_data.labeled_vector.unique().tolist() or self.model.unknown_ct_names is not None:
