@@ -50,9 +50,6 @@ class LATAQtrainer(Trainer):
     use_stratified_sampling: Boolean
         If 'True', the sampler tries to load equally distributed batches concerning the conditions in every
         iteration.
-    use_stratified_split: Boolean
-        If `True`, the train and validation data will be constructed in such a way that both have same distribution
-        of conditions in the data.
     monitor: Boolean
         If `True', the progress of the training will be printed after each epoch.
     n_workers: Integer
@@ -120,7 +117,6 @@ class LATAQtrainer(Trainer):
         self.train_data, self.valid_data = make_dataset(
             self.adata,
             train_frac=self.train_frac,
-            use_stratified_split=self.use_stratified_split,
             condition_key=self.condition_key,
             cell_type_keys=self.cell_type_keys,
             condition_encoder=self.model.condition_encoder,
