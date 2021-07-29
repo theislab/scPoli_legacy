@@ -873,6 +873,78 @@ def graph_connectivity(adata_post, label_key):
 
     return np.mean(clust_res)
 
+def entropy_batch_mixing(adata, label_key="batch",
+                         n_neighbors=50, n_pools=50, n_samples_per_pool=100):
+    """Computes Entory of Batch mixing metric for ``adata`` given the batch column name.
+        Parameters
+        ----------
+        adata: :class:`~anndata.AnnData`
+            Annotated dataset.
+        label_key: str
+            Name of the column which contains information about different studies in ``adata.obs`` data frame.
+        n_neighbors: int
+            Number of nearest neighbors.
+        n_pools: int
+            Number of EBM computation which will be averaged.
+        n_samples_per_pool: int
+            Number of samples to be used in each pool of execution.
+        Returns
+        -------
+        score: float
+            EBM score. A float between zero and one.
+    """
+    adata = remove_sparsity(adata)
+    n_cat = len(adata.obs[label_key].unique().tolist())
+    print(f'Calculating EBM with n_cat = {n_cat}')
+    neighbors = NearestNeighbors(n_neighbors=n_neighbors + 1).fit(adata.X)
+    indices = neighbors.kneighbors(adata.X, return_distance=False)[:, 1:]
+    batch_indices = np.vectorize(lambda i: adata.obs[label_key].values[i])(indices)
+
+    entropies = np.apply_along_axis(__entropy_from_indices, axis=1, arr=batch_indices, n_cat=n_cat)
+
+    # average n_pools entropy results where each result is an average of n_samples_per_pool random samples.
+    if n_pools == 1:
+        score = np.mean(entropies)
+    else:
+        score = np.mean([
+            np.mean(entropies[np.random.choice(len(entropies), size=n_samples_per_pool)])
+            for _ in range(n_pools)
+        ])
+    print("EBM:", score)
+    return score
+
+
+def knn_purity(adata, label_key="celltype", n_neighbors=30):
+    """Computes KNN Purity metric for ``adata`` given the batch column name.
+        Parameters
+        ----------
+        adata: :class:`~anndata.AnnData`
+            Annotated dataset.
+        label_key: str
+            Name of the column which contains information about different studies in ``adata.obs`` data frame.
+        n_neighbors: int
+            Number of nearest neighbors.
+        Returns
+        -------
+        score: float
+            KNN purity score. A float between 0 and 1.
+    """
+    adata = remove_sparsity(adata)
+    labels = LabelEncoder().fit_transform(adata.obs[label_key].to_numpy())
+
+    nbrs = NearestNeighbors(n_neighbors=n_neighbors + 1).fit(adata.X)
+    indices = nbrs.kneighbors(adata.X, return_distance=False)[:, 1:]
+    neighbors_labels = np.vectorize(lambda i: labels[i])(indices)
+
+    # pre cell purity scores
+    scores = ((neighbors_labels - labels.reshape(-1, 1)) == 0).mean(axis=1)
+    res = [
+        np.mean(scores[labels == i]) for i in np.unique(labels)
+    ]  # per cell-type purity
+    knn_p_score = np.mean(res)
+    print("KNN-P:", knn_p_score)
+    return knn_p_score
+
 
 
 def metrics(
@@ -895,6 +967,8 @@ def metrics(
     n_isolated=None, 
     graph_conn_=False,
     trajectory_= False, 
+    ebm_ = False,
+    knn_ = False,
     ):
     """
     summary of all metrics for one Anndata object
@@ -1045,5 +1119,27 @@ def metrics(
     else:
         trajectory_score = np.nan
     results['trajectory'] = trajectory_score
+
+    if ebm_:
+        print("Entropy batch mixing...")
+        ebm = entropy_batch_mixing(
+            adata_int, 
+            batch_key, 
+            n_neighbors=15
+            )
+    else:
+        ebm = np.nan
+    results['ebm'] = ebm
+
+    if knn_:
+        print('KNN purity')
+        knn = knn_purity(
+            adata_int,
+            label_key,
+            n_neighbors=15
+        )
+    else:
+        knn = np.nan
+    results['knn'] = knn
     
     return pd.DataFrame.from_dict(results, orient='index')

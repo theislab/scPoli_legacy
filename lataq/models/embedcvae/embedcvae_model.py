@@ -208,10 +208,10 @@ class EMBEDCVAE(LATAQ):
                     p.requires_grad = True
                 if freeze_expression:
                     if 'cond_L.weight' in name:
-                        p.requires_grad = True
+                        p.requires_grad = False
                 else:
                     if "L0" in name or "N0" in name:
-                        p.requires_grad = True
+                        p.requires_grad = False
 
         return new_model
 
