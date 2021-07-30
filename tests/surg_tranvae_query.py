@@ -26,6 +26,7 @@ def set_axis_style(ax, labels):
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
 experiments = ["lung_h"]
 test_nrs = [10]
+save_dir = "tranvae_testing/tranvae_surg/"
 
 # Training Params
 tranvae_epochs = 500
@@ -157,13 +158,16 @@ for experiment in experiments:
                 reference = ["Stanford_Krasnow_bioRxivTravaglini", "Misharin_new"]
                 query = ["Vanderbilt_Kropski_bioRxivHabermann_vand", "Sanger_Teichmann_2019VieiraBraga"]
 
+        if not os.path.exists(os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/')):
+            os.makedirs(os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/'))
+
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
         target_adata = adata[adata.obs.study.isin(query)].copy()
 
         tranvae = TRANVAE.load_query_data(
             adata=target_adata,
-            reference_model=os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_ref_model'),
+            reference_model=os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_ref_model'),
             labeled_indices=[],
         )
         q_time = time.time()
@@ -179,10 +183,10 @@ for experiment in experiments:
             unlabeled_loss_metric=unlabeled_loss_metric
         )
         q_time = time.time() - q_time
-        tranvae.save(os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_model'),
+        tranvae.save(os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_model'),
                      overwrite=True)
         text_file_t = open(
-            os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_runtime.txt'), "w")
+            os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_runtime.txt'), "w")
         m = text_file_t.write(str(q_time))
         text_file_t.close()
 
@@ -197,7 +201,7 @@ for experiment in experiments:
 
             text_file_q = open(
                 os.path.expanduser(
-                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_acc_report_{cell_key}.txt'),
+                    f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_acc_report_{cell_key}.txt'),
                 "w")
             n = text_file_q.write(classification_report(
                 y_true=target_adata.obs[cell_key],
@@ -216,7 +220,7 @@ for experiment in experiments:
             labels = ['Correct', 'Incorrect']
             set_axis_style(ax, labels)
             plt.savefig(
-                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_uncertainty_{cell_key}.png'),
+                os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_uncertainty_{cell_key}.png'),
                 bbox_inches='tight')
 
             checks = np.array(len(target_adata) * ['incorrect'])
@@ -226,7 +230,7 @@ for experiment in experiments:
             adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
 
         adata_latent.write_h5ad(filename=os.path.expanduser(
-            f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_adata.h5ad'))
+            f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_adata.h5ad'))
         sc.pp.neighbors(adata_latent, n_neighbors=8)
         sc.tl.leiden(adata_latent)
         sc.tl.umap(adata_latent)
@@ -239,7 +243,7 @@ for experiment in experiments:
                    )
         plt.savefig(
             os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_umap_batch.png'),
+                f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_umap_batch.png'),
             bbox_inches='tight')
         plt.close()
 
@@ -252,7 +256,7 @@ for experiment in experiments:
                        )
             plt.savefig(
                 os.path.expanduser(
-                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_query_umap_{key}.png'),
+                    f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_umap_{key}.png'),
                 bbox_inches='tight')
             plt.close()
 
@@ -265,7 +269,7 @@ for experiment in experiments:
             preds = results_dict[cell_key]['preds']
             probs = results_dict[cell_key]['probs']
             text_file_f = open(
-                os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_acc_report_{cell_key}.txt'), "w")
+                os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_acc_report_{cell_key}.txt'), "w")
             n = text_file_f.write(classification_report(y_true=adata.obs[cell_key], y_pred=preds))
             text_file_f.close()
 
@@ -280,7 +284,7 @@ for experiment in experiments:
             set_axis_style(ax, labels)
             plt.savefig(
                 os.path.expanduser(
-                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_uncertainty_{cell_key}.png'),
+                    f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_uncertainty_{cell_key}.png'),
                 bbox_inches='tight')
 
             checks = np.array(len(adata) * ['incorrect'])
@@ -290,7 +294,7 @@ for experiment in experiments:
             adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
 
         adata_latent.write_h5ad(filename=os.path.expanduser(
-            f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_adata.h5ad'))
+            f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_adata.h5ad'))
         sc.pp.neighbors(adata_latent, n_neighbors=8)
         sc.tl.leiden(adata_latent)
         sc.tl.umap(adata_latent)
@@ -303,7 +307,7 @@ for experiment in experiments:
                    )
         plt.savefig(
             os.path.expanduser(
-                f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_umap_batch.png'),
+                f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_umap_batch.png'),
             bbox_inches='tight')
         plt.close()
 
@@ -316,6 +320,6 @@ for experiment in experiments:
                        )
             plt.savefig(
                 os.path.expanduser(
-                    f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_full_umap_{key}.png'),
+                    f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_umap_{key}.png'),
                 bbox_inches='tight')
             plt.close()

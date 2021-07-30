@@ -25,6 +25,7 @@ def set_axis_style(ax, labels):
 # Experiment Params
 experiments = ["lung_h"]
 test_nrs = [10]
+save_dir = "tranvae_testing/tranvae_surg/"
 
 # Model Params
 latent_dim = 10
@@ -160,6 +161,9 @@ for experiment in experiments:
                 reference = ["Stanford_Krasnow_bioRxivTravaglini", "Misharin_new"]
                 query = ["Vanderbilt_Kropski_bioRxivHabermann_vand", "Sanger_Teichmann_2019VieiraBraga"]
 
+        if not os.path.exists(os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/')):
+            os.makedirs(os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/'))
+
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
         target_adata = adata[adata.obs.study.isin(query)].copy()
@@ -185,10 +189,10 @@ for experiment in experiments:
             unlabeled_loss_metric=unlabeled_loss_metric
         )
         ref_time = time.time() - ref_time
-        ref_path = os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_ref_model')
+        ref_path = os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_ref_model')
         tranvae.save(ref_path, overwrite=True)
 
         text_file_t = open(
-            os.path.expanduser(f'~/Documents/tranvae_benchmarks/batchwise/surg/{experiment}/{test_nr}_ref_runtime.txt'), "w")
+            os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_ref_runtime.txt'), "w")
         m = text_file_t.write(str(ref_time))
         text_file_t.close()
