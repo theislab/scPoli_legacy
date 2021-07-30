@@ -78,28 +78,38 @@ class tranVAE(trVAE):
         dists = euclidean_dist(latent, self.landmarks_labeled["mean"][classes_list, :])
 
         if metric == "dist":
+            # Idea of using euclidean distances for classification
             weighted_distances = F.softmax(-dists, dim=1)
             probs, preds = torch.max(weighted_distances, dim=1)
             preds = classes_list[preds]
+
+        elif metric == "hyperbolic":
+            # This is WIP
+            assert False, "WIP"
+
+        elif metric == "overlap":
+            # Own idea of cell balls with center at landmark and radius of 95%-quantile
+            assert False, "NEEDS CHECK"
+            quantiles_view = self.landmarks_labeled["q"].unsqueeze(0).expand(dists.size(0), dists.size(1))
+            #overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
+            #overlap = 1 - (quantiles_view - overlap / quantiles_view)
+            overlap = dists / quantiles_view
+            overlap = (overlap.T / overlap.max(1)[0]).T
+            overlap = 1 - overlap
+            overlap = (overlap.T / overlap.sum(1)).T
+            probs, preds = torch.max(overlap, dim=1)
+            preds = classes_list[preds]
+
         elif metric == "seurat":
+            # Idea of using seurat distances for classification
+            # See https://www.cell.com/cell/pdf/S0092-8674(19)30559-8.pdf
+            assert False, "NEEDS CHECK"
             dists_t = 1 - (dists.T / dists.max(1)[0]).T
             prob = 1 - torch.exp(-dists_t / 4)
             prob = (prob.T / prob.sum(1)).T
             probs, preds = torch.max(prob, dim=1)
             preds = classes_list[preds]
-        elif metric == "overlap":
-            quantiles_view = self.landmarks_labeled["q"].unsqueeze(0).expand(dists.size(0), dists.size(1))
 
-            #overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
-            #overlap = 1 - (quantiles_view - overlap / quantiles_view)
-
-            overlap = dists / quantiles_view
-            overlap = (overlap.T / overlap.max(1)[0]).T
-            overlap = 1 - overlap
-
-            overlap = (overlap.T / overlap.sum(1)).T
-            probs, preds = torch.max(overlap, dim=1)
-            preds = classes_list[preds]
         else:
             assert False, f"'{metric}' is not a available as a loss function please choose " \
                           f"between 'exp', 'var' or 'seurat'!"
