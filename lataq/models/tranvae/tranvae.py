@@ -84,8 +84,21 @@ class tranVAE(trVAE):
             preds = classes_list[preds]
 
         elif metric == "hyperbolic":
-            # This is WIP
-            assert False, "WIP"
+            # Transform Landmarks to hyperbolic ideal points
+            h_landmarks = F.normalize(self.landmarks_labeled["mean"][classes_list, :], p=2, dim=1)
+
+            # Transform latent to hyperbolic space
+            # TODO:
+            #  - CHECK TANH
+            #  - CHECK DIMS AT DIVISION
+            h_latent = F.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1) * latent
+
+            # Get classification matrix n_cells x n_cell_types and get the predictions by max
+            # TODO:
+            #  - CHECK DIMS OF DIVISION
+            #  - CHECK IF PROBS ARE NORMALIZED
+            class_m = torch.matmul(h_latent / torch.norm(h_latent, p=2, dim=1), h_landmarks.T)
+            probs, preds = torch.max(class_m, dim=1)
 
         elif metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile

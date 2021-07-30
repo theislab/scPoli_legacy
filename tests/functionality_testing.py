@@ -1,7 +1,24 @@
 import torch
 import numpy as np
+import torch.nn.functional as F
 
-classes = torch.tensor([3,4,5])
+a = torch.tensor([[0.9041, 0.0196],[-2.1763, -0.4713],[-2.1763, -0.4713],[-2.1763, -0.4713]])
+idx = torch.tensor([0,0,1,1,2,2,-1,-1,-1])
+print(idx != -1)
+b = a[idx,:]
+c = b[idx != -1,:]
+
+print(b)
+print("\n", c)
+d = torch.sqrt(torch.sum(a ** 2, dim=1))
+print(d)
+print(torch.norm(a, p=2, dim=1))
+exit()
+classes = torch.tensor([[3.,4.,5.],[3.,5.,6.],[5.,6.,7.],[7.,8.,9.]])
+classes = F.normalize(classes, p=2, dim=1)
+classes = classes ** 2
+print(classes)
+exit()
 preds = torch.tensor([0,2,1,2,0,1])
 preds = classes[preds]
 print(preds)

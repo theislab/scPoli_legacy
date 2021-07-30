@@ -1,6 +1,7 @@
 from typing import Optional
 import torch
 from torch.nn import NLLLoss
+import torch.nn.functional as F
 import scanpy as sc
 import pandas as pd
 import numpy as np
@@ -399,7 +400,32 @@ class LATAQtrainer(Trainer):
                 loss += label_loss
 
         elif self.labeled_loss_metric == "hyperbolic":
-            assert False, "WIP"
+            # Transform Landmarks to hyperbolic ideal points
+            h_landmarks = F.normalize(landmarks, p=2, dim=1)
+
+            # Transform latent to hyperbolic space and filter out cells with label == -1 which correspond to "unknown"
+            # TODO:
+            #  - CHECK TANH
+            #  - CHECK DIMS AT DIVISION
+            h_latent = F.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1) * latent
+            h_latent = h_latent[labels != -1,:]
+
+            # Get tensor of corresponding landmarks and filter out cells with label == -1 which correspond to "unknown"
+            corr_land = h_landmarks[labels,:]
+            corr_land = corr_land[labels != -1, :]
+
+            # Buseman loss
+            # TODO: CHECK FOR DIMENSIONS
+            b_loss = torch.log(torch.cdist(corr_land, h_latent) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
+
+            # Overconfidence penalty loss
+            overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
+
+            # Calculate overall loss by taking mean of each cell
+            # TODO:
+            #  - CHECK FOR DIMS AND RIGHT MEAN
+            #  - CHECK IF (h_latent.size(1) + 1) IS ENOUGH AS SCALE OR MAKE NEW PARAM
+            loss_val = (b_loss - (h_latent.size(1) + 1) * overconf_loss).mean(0)
 
         elif self.labeled_loss_metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile
@@ -448,7 +474,31 @@ class LATAQtrainer(Trainer):
             loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
 
         elif self.labeled_loss_metric == "hyperbolic":
-            assert False, "WIP"
+            # Transform Landmarks to hyperbolic ideal points
+            h_landmarks = F.normalize(landmarks, p=2, dim=1)
+
+            # Transform latent to hyperbolic space
+            # TODO:
+            #  - CHECK TANH
+            #  - CHECK DIMS AT DIVISION
+            h_latent = F.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1) * latent
+
+            # Get tensor of closest landmarks in Euclidean space
+            # TODO: CHECK IF ITS BETTER TO CHOOSE CLOSEST LANDMARKS IN HYPERBOLIC SPACE
+            corr_land = h_landmarks[y_hat, :]
+
+            # Buseman loss
+            # TODO: CHECK FOR DIMENSIONS AT DIVISION
+            b_loss = torch.log(torch.cdist(corr_land, h_latent) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
+
+            # Overconfidence penalty loss
+            overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
+
+            # Calculate overall loss by taking mean of each cell
+            # TODO:
+            #  - CHECK FOR DIMS AND RIGHT MEAN
+            #  - CHECK IF (h_latent.size(1) + 1) IS ENOUGH AS SCALE OR MAKE NEW PARAM
+            loss_val = (b_loss - (h_latent.size(1) + 1) * overconf_loss).mean(0)
 
         elif self.unlabeled_loss_metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile
