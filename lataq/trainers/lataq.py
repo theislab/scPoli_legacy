@@ -70,12 +70,19 @@ class LATAQtrainer(Trainer):
             labeled_loss_metric: str = "dist",
             unlabeled_loss_metric: str = "dist",
             unlabeled_weight: float = 0.001,
+            overconfidence_scale: int = None,
             eta: float = 1,
             tau: float = 0,
             **kwargs
     ):
 
         super().__init__(model, adata, **kwargs)
+        self.quantile = 0.95
+        if overconfidence_scale == None:
+            self.overconfidence_scale = self.model.latent_dim - 2
+        else:
+            self.overconfidence_scale = overconfidence_scale
+
         self.labeled_loss_metric = labeled_loss_metric
         self.unlabeled_loss_metric = unlabeled_loss_metric
         self.eta = eta
@@ -86,7 +93,6 @@ class LATAQtrainer(Trainer):
         self.clustering_res = clustering_res
         self.pretraining_epochs = pretraining_epochs
         self.use_early_stopping_orig = self.use_early_stopping
-        self.quantile = 0.95
         self.cross_entropy = NLLLoss()
 
         self.landmarks_labeled = None
@@ -390,6 +396,10 @@ class LATAQtrainer(Trainer):
         distances = euclidean_dist(latent, landmarks)
         loss = torch.tensor(0.0, device=self.device)
 
+        # If data only contains 'unknown' celltypes
+        if unique_labels.tolist() == [-1]:
+            return loss
+
         if self.labeled_loss_metric == "dist":
             # Basic euclidean distance loss
             for value in unique_labels:
@@ -404,28 +414,25 @@ class LATAQtrainer(Trainer):
             h_landmarks = F.normalize(landmarks, p=2, dim=1)
 
             # Transform latent to hyperbolic space and filter out cells with label == -1 which correspond to "unknown"
-            # TODO:
-            #  - CHECK TANH
-            #  - CHECK DIMS AT DIVISION
-            h_latent = F.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1) * latent
-            h_latent = h_latent[labels != -1,:]
+            transformation_m = (
+                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1)
+            ).unsqueeze(dim=1).expand(-1, latent.size(1))
+            h_latent = transformation_m * latent
+            h_latent = h_latent[labels.squeeze(1) != -1, :]
 
             # Get tensor of corresponding landmarks and filter out cells with label == -1 which correspond to "unknown"
-            corr_land = h_landmarks[labels,:]
-            corr_land = corr_land[labels != -1, :]
+            corr_land = h_landmarks[labels.squeeze(1), :]
+            corr_land = corr_land[labels.squeeze(1) != -1, :]
 
             # Buseman loss
-            # TODO: CHECK FOR DIMENSIONS
-            b_loss = torch.log(torch.cdist(corr_land, h_latent) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
+            b_loss = torch.log(
+                torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
 
             # Overconfidence penalty loss
             overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
 
             # Calculate overall loss by taking mean of each cell
-            # TODO:
-            #  - CHECK FOR DIMS AND RIGHT MEAN
-            #  - CHECK IF (h_latent.size(1) + 1) IS ENOUGH AS SCALE OR MAKE NEW PARAM
-            loss_val = (b_loss - (h_latent.size(1) + 1) * overconf_loss).mean(0)
+            loss = (b_loss - self.overconfidence_scale * overconf_loss).mean()
 
         elif self.labeled_loss_metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile
@@ -478,27 +485,23 @@ class LATAQtrainer(Trainer):
             h_landmarks = F.normalize(landmarks, p=2, dim=1)
 
             # Transform latent to hyperbolic space
-            # TODO:
-            #  - CHECK TANH
-            #  - CHECK DIMS AT DIVISION
-            h_latent = F.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1) * latent
+            transformation_m = (
+                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1)
+            ).unsqueeze(dim=1).expand(-1, latent.size(1))
+            h_latent = transformation_m * latent
 
             # Get tensor of closest landmarks in Euclidean space
-            # TODO: CHECK IF ITS BETTER TO CHOOSE CLOSEST LANDMARKS IN HYPERBOLIC SPACE
             corr_land = h_landmarks[y_hat, :]
 
             # Buseman loss
-            # TODO: CHECK FOR DIMENSIONS AT DIVISION
-            b_loss = torch.log(torch.cdist(corr_land, h_latent) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
+            b_loss = torch.log(
+                torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
 
             # Overconfidence penalty loss
             overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
 
             # Calculate overall loss by taking mean of each cell
-            # TODO:
-            #  - CHECK FOR DIMS AND RIGHT MEAN
-            #  - CHECK IF (h_latent.size(1) + 1) IS ENOUGH AS SCALE OR MAKE NEW PARAM
-            loss_val = (b_loss - (h_latent.size(1) + 1) * overconf_loss).mean(0)
+            loss_val = (b_loss - self.overconfidence_scale * overconf_loss).mean()
 
         elif self.unlabeled_loss_metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile

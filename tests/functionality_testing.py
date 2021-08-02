@@ -2,6 +2,55 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
+
+n_celltypes = 5
+n_cells = 63
+latent = torch.rand((n_cells,10))
+landmarks = torch.rand((n_celltypes,10))
+labels = torch.randint(0, 1, (n_cells,1))
+uniq_labels = torch.unique(labels, sorted=True).tolist()
+if uniq_labels == [-1]:
+    print("EXCEPTION")
+    exit()
+
+# Transform Landmarks to hyperbolic ideal points
+h_landmarks = F.normalize(landmarks, p=2, dim=1)
+
+# Transform latent to hyperbolic space and filter out cells with label == -1 which correspond to "unknown"
+transformation_m = (
+        torch.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1)
+).unsqueeze(dim=1).expand(-1, latent.size(1))
+h_latent = transformation_m * latent
+h_latent = h_latent[labels.squeeze(1) != -1, :]
+
+# Get tensor of corresponding landmarks and filter out cells with label == -1 which correspond to "unknown"
+corr_land = h_landmarks[labels.squeeze(1), :]
+corr_land = corr_land[labels.squeeze(1) != -1, :]
+
+# Buseman loss
+b_loss = torch.log(torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
+
+# Overconfidence penalty loss
+overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
+
+# Calculate overall loss by taking mean of each cell
+# TODO:
+#  - CHECK IF (h_latent.size(1) + 1) IS ENOUGH AS SCALE OR MAKE NEW PARAM
+
+loss_val = (b_loss - (h_latent.size(1) + 1) * overconf_loss).mean()
+
+# Get classification matrix n_cells x n_cell_types and get the predictions by max
+class_m = torch.matmul(
+    h_latent / torch.norm(h_latent, p=2, dim=1).unsqueeze(dim=1).expand(-1, latent.size(1)),
+    h_landmarks.T
+)
+class_m = F.normalize(class_m, p=1, dim=1)
+probs, preds = torch.max(class_m, dim=1)
+print(loss_val)
+print(preds)
+exit()
+
+
 a = torch.tensor([[0.9041, 0.0196],[-2.1763, -0.4713],[-2.1763, -0.4713],[-2.1763, -0.4713]])
 idx = torch.tensor([0,0,1,1,2,2,-1,-1,-1])
 print(idx != -1)
@@ -14,15 +63,18 @@ d = torch.sqrt(torch.sum(a ** 2, dim=1))
 print(d)
 print(torch.norm(a, p=2, dim=1))
 exit()
+
 classes = torch.tensor([[3.,4.,5.],[3.,5.,6.],[5.,6.,7.],[7.,8.,9.]])
 classes = F.normalize(classes, p=2, dim=1)
 classes = classes ** 2
 print(classes)
 exit()
+
 preds = torch.tensor([0,2,1,2,0,1])
 preds = classes[preds]
 print(preds)
 exit()
+
 dictio = dict()
 dictio['b'] = [1,2,3,4,5]
 dictio['a'] = [3,4,5,6,7]
@@ -44,8 +96,9 @@ for i, key in enumerate(cell_types_.keys()):
 
 print(landmarks_idx)
 exit()
-unknown_ct_names_ = [3,4,5]
 
+
+unknown_ct_names_ = [3,4,5]
 for unknown_ct in unknown_ct_names_:
     if unknown_ct in cell_types_:
         del cell_types_[unknown_ct]

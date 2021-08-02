@@ -88,16 +88,17 @@ class tranVAE(trVAE):
             h_landmarks = F.normalize(self.landmarks_labeled["mean"][classes_list, :], p=2, dim=1)
 
             # Transform latent to hyperbolic space
-            # TODO:
-            #  - CHECK TANH
-            #  - CHECK DIMS AT DIVISION
-            h_latent = F.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1) * latent
+            transformation_m = (
+                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1)
+            ).unsqueeze(dim=1).expand(-1, latent.size(1))
+            h_latent = transformation_m * latent
 
             # Get classification matrix n_cells x n_cell_types and get the predictions by max
-            # TODO:
-            #  - CHECK DIMS OF DIVISION
-            #  - CHECK IF PROBS ARE NORMALIZED
-            class_m = torch.matmul(h_latent / torch.norm(h_latent, p=2, dim=1), h_landmarks.T)
+            class_m = torch.matmul(
+                h_latent / torch.norm(h_latent, p=2, dim=1).unsqueeze(dim=1).expand(-1, latent.size(1)),
+                h_landmarks.T
+            )
+            class_m = F.normalize(class_m, p=1, dim=1)
             probs, preds = torch.max(class_m, dim=1)
 
         elif metric == "overlap":

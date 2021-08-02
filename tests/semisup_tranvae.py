@@ -26,7 +26,7 @@ def set_axis_style(ax, labels):
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
 experiments = ["pancreas"]
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_semi/"
+save_dir = "tranvae_testing/tranvae_semi_100/"
 
 unlabeled_strat = "batch"
 cells_per_ct = 2000
@@ -36,15 +36,16 @@ latent_dim = 10
 use_mmd = False
 
 # Training Params
-tranvae_epochs = 100
-pretraining_epochs = 50
+tranvae_epochs = 500
+pretraining_epochs = 100
 alpha_epoch_anneal = 1e6
-eta = 1
+eta = 100
 tau = 0
-clustering_res = 2
-labeled_loss_metric = "dist"
-unlabeled_loss_metric = "dist"
-class_metric = "dist"
+clustering_res = 1
+labeled_loss_metric = "hyperbolic"
+unlabeled_loss_metric = "hyperbolic"
+class_metric = "hyperbolic"
+overconfidence_scale = None
 
 
 early_stopping_kwargs = {
@@ -76,11 +77,16 @@ for experiment in experiments:
                 reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq']
                 query = ['Pancreas Fluidigm C1']
             elif test_nr == 5:
-                reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
+                reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq',
+                             'Pancreas Fluidigm C1']
                 query = []
             elif test_nr == 10:
                 reference = ["inDrop1", "inDrop2", "inDrop3", "inDrop4", "fluidigmc1", "smartseq2", "smarter"]
                 query = ["celseq", "celseq2"]
+            elif test_nr == 20:
+                reference = ["inDrop1", "inDrop2", "inDrop3", "inDrop4", "fluidigmc1", "smartseq2", "smarter",
+                             "celseq", "celseq2"]
+                query = []
         if experiment == "pbmc":
             adata = sc.read(os.path.expanduser(
                 f'~/Documents/benchmarking_datasets/benchmark_pbmc_shrinked.h5ad'))
@@ -100,6 +106,9 @@ for experiment in experiments:
             elif test_nr == 10:
                 reference = ['Oetjen', '10X', 'Sun']
                 query = ['Freytag']
+            elif test_nr == 20:
+                reference = ['Oetjen', '10X', 'Sun','Freytag']
+                query = []
         if experiment == "brain":
             adata = sc.read(
                 os.path.expanduser(f'~/Documents/benchmarking_datasets/benchmark_brain_shrinked.h5ad'))
@@ -119,6 +128,9 @@ for experiment in experiments:
             elif test_nr == 10:
                 reference = ['Rosenberg', 'Saunders']
                 query = ['Zeisel', 'Tabula_muris']
+            elif test_nr == 20:
+                reference = ['Rosenberg', 'Saunders','Zeisel', 'Tabula_muris']
+                query = []
         if experiment == "scvelo":
             adata = sc.read(
                 os.path.expanduser(f'~/Documents/benchmarking_datasets/benchmark_scvelo_shrinked.h5ad'))
@@ -138,6 +150,9 @@ for experiment in experiments:
             elif test_nr == 10:
                 reference = ['12.5', '13.5']
                 query = ['14.5', '15.5']
+            elif test_nr == 20:
+                reference = ['12.5', '13.5','14.5', '15.5']
+                query = []
         if experiment == "lung":
             adata = sc.read(
                 os.path.expanduser(f'~/Documents/benchmarking_datasets/benchmark_lung_shrinked.h5ad'))
@@ -156,6 +171,10 @@ for experiment in experiments:
                 reference = ['breast', 'colorectal', 'liver2', 'liver1', 'lung1', 'lung2', 'multiple', 'ovary',
                              'pancreas', 'skin']
                 query = ['melanoma1', 'melanoma2', 'uveal melanoma']
+            if test_nr == 20:
+                reference = ['breast', 'colorectal', 'liver2', 'liver1', 'lung1', 'lung2', 'multiple', 'ovary',
+                             'pancreas', 'skin','melanoma1', 'melanoma2', 'uveal melanoma']
+                query = []
         if experiment == "lung_h":
             adata = sc.read(
                 os.path.expanduser(f'~/Documents/benchmarking_datasets/adata_lung_subsampled.h5ad'))
@@ -164,6 +183,10 @@ for experiment in experiments:
             if test_nr == 10:
                 reference = ["Stanford_Krasnow_bioRxivTravaglini", "Misharin_new"]
                 query = ["Vanderbilt_Kropski_bioRxivHabermann_vand", "Sanger_Teichmann_2019VieiraBraga"]
+            if test_nr == 20:
+                reference = ["Stanford_Krasnow_bioRxivTravaglini", "Misharin_new",
+                             "Vanderbilt_Kropski_bioRxivHabermann_vand", "Sanger_Teichmann_2019VieiraBraga"]
+                query = []
 
         print("\n\n\n\nSTARTING WITH EXPERIMENT:", experiment, test_nr)
 
@@ -209,7 +232,8 @@ for experiment in experiments:
             tau=tau,
             clustering_res=clustering_res,
             labeled_loss_metric=labeled_loss_metric,
-            unlabeled_loss_metric=unlabeled_loss_metric
+            unlabeled_loss_metric=unlabeled_loss_metric,
+            overconfidence_scale=overconfidence_scale
         )
         ref_time = time.time() - ref_time
         ref_path = os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_model')
@@ -220,80 +244,80 @@ for experiment in experiments:
         m = text_file_t.write(str(ref_time))
         text_file_t.close()
 
-        # UNLABELED EVAL
-        data_latent = tranvae.get_latent(unlabeled_adata.X, unlabeled_adata.obs[condition_key])
-        adata_latent = sc.AnnData(data_latent)
-        adata_latent.obs['batch'] = unlabeled_adata.obs[condition_key].tolist()
-        results_dict = tranvae.classify(
-            unlabeled_adata.X,
-            unlabeled_adata.obs[condition_key],
-            metric=class_metric
-        )
-        for cell_key in cell_type_key:
-            preds = results_dict[cell_key]['preds']
-            probs = results_dict[cell_key]['probs']
+        if len(unlabeled_adata) > 0:
+            # UNLABELED EVAL
+            data_latent = tranvae.get_latent(unlabeled_adata.X, unlabeled_adata.obs[condition_key])
+            adata_latent = sc.AnnData(data_latent)
+            adata_latent.obs['batch'] = unlabeled_adata.obs[condition_key].tolist()
+            results_dict = tranvae.classify(
+                unlabeled_adata.X,
+                unlabeled_adata.obs[condition_key],
+                metric=class_metric
+            )
+            for cell_key in cell_type_key:
+                preds = results_dict[cell_key]['preds']
+                probs = results_dict[cell_key]['probs']
 
-            text_file_q = open(
-                os.path.expanduser(
-                    f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_acc_report_{cell_key}.txt'),
-                "w")
-            n = text_file_q.write(classification_report(
-                y_true=unlabeled_adata.obs[cell_key],
-                y_pred=preds,
-                labels=np.array(unlabeled_adata.obs[cell_key].unique().tolist())
-            ))
-            text_file_q.close()
+                text_file_q = open(
+                    os.path.expanduser(
+                        f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_acc_report_{cell_key}.txt'),
+                    "w")
+                n = text_file_q.write(classification_report(
+                    y_true=unlabeled_adata.obs[cell_key],
+                    y_pred=preds,
+                    labels=np.array(unlabeled_adata.obs[cell_key].unique().tolist())
+                ))
+                text_file_q.close()
 
-            correct_probs = probs[preds == unlabeled_adata.obs[cell_key]]
-            incorrect_probs = probs[preds != unlabeled_adata.obs[cell_key]]
-            data = [correct_probs, incorrect_probs]
-            fig, ax = plt.subplots()
-            ax.set_title('Default violin plot')
-            ax.set_ylabel('Observed values')
-            ax.violinplot(data)
-            labels = ['Correct', 'Incorrect']
-            set_axis_style(ax, labels)
-            plt.savefig(
-                os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_uncertainty_{cell_key}.png'),
-                bbox_inches='tight')
+                correct_probs = probs[preds == unlabeled_adata.obs[cell_key]]
+                incorrect_probs = probs[preds != unlabeled_adata.obs[cell_key]]
+                data = [correct_probs, incorrect_probs]
+                fig, ax = plt.subplots()
+                ax.set_title('Default violin plot')
+                ax.set_ylabel('Observed values')
+                ax.violinplot(data)
+                labels = ['Correct', 'Incorrect']
+                set_axis_style(ax, labels)
+                plt.savefig(
+                    os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_uncertainty_{cell_key}.png'),
+                    bbox_inches='tight')
 
-            checks = np.array(len(unlabeled_adata) * ['incorrect'])
-            checks[preds == unlabeled_adata.obs[cell_key]] = 'correct'
-            adata_latent.obs[cell_key] = unlabeled_adata.obs[cell_key].tolist()
-            adata_latent.obs[f'{cell_key}_pred'] = preds.tolist()
-            adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
+                checks = np.array(len(unlabeled_adata) * ['incorrect'])
+                checks[preds == unlabeled_adata.obs[cell_key]] = 'correct'
+                adata_latent.obs[cell_key] = unlabeled_adata.obs[cell_key].tolist()
+                adata_latent.obs[f'{cell_key}_pred'] = preds.tolist()
+                adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
 
-        adata_latent.write_h5ad(filename=os.path.expanduser(f'~/Documents/{save_dir}/'
-                                                            f'{experiment}/{test_nr}_query_adata.h5ad'))
-        sc.pp.neighbors(adata_latent, n_neighbors=8)
-        sc.tl.leiden(adata_latent)
-        sc.tl.umap(adata_latent)
+            adata_latent.write_h5ad(filename=os.path.expanduser(f'~/Documents/{save_dir}/'
+                                                                f'{experiment}/{test_nr}_query_adata.h5ad'))
+            sc.pp.neighbors(adata_latent, n_neighbors=8)
+            sc.tl.leiden(adata_latent)
+            sc.tl.umap(adata_latent)
 
-        sc.pl.umap(adata_latent,
-                   color=['batch'],
-                   frameon=False,
-                   wspace=0.6,
-                   show=False
-                   )
-        plt.savefig(
-            os.path.expanduser(
-                f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_umap_batch.png'),
-            bbox_inches='tight')
-        plt.close()
-
-        for key in cell_type_key:
             sc.pl.umap(adata_latent,
-                       color=[key, f'{key}_pred', f'{key}_bool'],
+                       color=['batch'],
                        frameon=False,
                        wspace=0.6,
                        show=False
                        )
             plt.savefig(
                 os.path.expanduser(
-                    f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_umap_{key}.png'),
+                    f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_umap_batch.png'),
                 bbox_inches='tight')
             plt.close()
 
+            for key in cell_type_key:
+                sc.pl.umap(adata_latent,
+                           color=[key, f'{key}_pred', f'{key}_bool'],
+                           frameon=False,
+                           wspace=0.6,
+                           show=False
+                           )
+                plt.savefig(
+                    os.path.expanduser(
+                        f'~/Documents/{save_dir}/{experiment}/{test_nr}_query_umap_{key}.png'),
+                    bbox_inches='tight')
+                plt.close()
 
         # FULL EVAL
         data_latent = tranvae.get_latent()
