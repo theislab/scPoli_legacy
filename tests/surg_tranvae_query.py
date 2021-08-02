@@ -23,21 +23,22 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-#experiments = ["pancreas","pbmc","lung","scvelo","brain"]
-experiments = ["lung_h"]
+experiments = ["pancreas","pbmc","lung","scvelo","brain"]
+#experiments = ["lung_h"]
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_surg/"
+save_dir = "tranvae_testing/tranvae_surg_10/"
 
 # Training Params
 tranvae_epochs = 500
 pretraining_epochs = 0
 alpha_epoch_anneal = 1e6
-eta = 1
+eta = 10
 tau = 0
 clustering_res = 2
-labeled_loss_metric = "dist"
-unlabeled_loss_metric = "dist"
-class_metric = "dist"
+labeled_loss_metric = "hyperbolic"
+unlabeled_loss_metric = "hyperbolic"
+class_metric = "hyperbolic"
+overconfidence_scale = None
 
 
 early_stopping_kwargs = {
@@ -180,7 +181,8 @@ for experiment in experiments:
             weight_decay=0,
             clustering_res=clustering_res,
             labeled_loss_metric=labeled_loss_metric,
-            unlabeled_loss_metric=unlabeled_loss_metric
+            unlabeled_loss_metric=unlabeled_loss_metric,
+            overconfidence_scale = overconfidence_scale
         )
         q_time = time.time() - q_time
         tranvae.save(os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_model'),

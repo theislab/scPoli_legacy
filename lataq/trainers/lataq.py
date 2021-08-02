@@ -79,7 +79,7 @@ class LATAQtrainer(Trainer):
         super().__init__(model, adata, **kwargs)
         self.quantile = 0.95
         if overconfidence_scale == None:
-            self.overconfidence_scale = self.model.latent_dim - 2
+            self.overconfidence_scale = self.model.latent_dim
         else:
             self.overconfidence_scale = overconfidence_scale
 

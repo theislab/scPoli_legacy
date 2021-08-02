@@ -23,9 +23,9 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-experiments = ["lung_h"]
+experiments = ["pancreas","pbmc","lung","scvelo","brain"]
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_surg/"
+save_dir = "tranvae_testing/tranvae_surg_10/"
 
 # Model Params
 latent_dim = 10
@@ -33,14 +33,15 @@ use_mmd = False
 
 # Training Params
 tranvae_epochs = 500
-pretraining_epochs = 0
+pretraining_epochs = 200
 alpha_epoch_anneal = 1e6
-eta = 1
+eta = 10
 tau = 0
 clustering_res = 2
-labeled_loss_metric = "dist"
-unlabeled_loss_metric = "dist"
-class_metric = "dist"
+labeled_loss_metric = "hyperbolic"
+unlabeled_loss_metric = "hyperbolic"
+class_metric = "hyperbolic"
+overconfidence_scale = None
 
 
 early_stopping_kwargs = {
@@ -186,7 +187,8 @@ for experiment in experiments:
             tau=tau,
             clustering_res=clustering_res,
             labeled_loss_metric=labeled_loss_metric,
-            unlabeled_loss_metric=unlabeled_loss_metric
+            unlabeled_loss_metric=unlabeled_loss_metric,
+            overconfidence_scale=overconfidence_scale
         )
         ref_time = time.time() - ref_time
         ref_path = os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_ref_model')

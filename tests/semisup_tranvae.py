@@ -24,9 +24,9 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
-experiments = ["pancreas"]
+experiments = ["pancreas","pbmc","lung","scvelo","brain"]
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_semi_100/"
+save_dir = "tranvae_testing/tranvae_semi_10/"
 
 unlabeled_strat = "batch"
 cells_per_ct = 2000
@@ -39,7 +39,7 @@ use_mmd = False
 tranvae_epochs = 500
 pretraining_epochs = 100
 alpha_epoch_anneal = 1e6
-eta = 100
+eta = 10
 tau = 0
 clustering_res = 1
 labeled_loss_metric = "hyperbolic"
