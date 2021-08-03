@@ -2,10 +2,12 @@ import pandas as pd
 import numpy as np
 import scanpy as sc
 from scipy import sparse
+from scipy.stats import itemfreq, entropy
 from scipy.sparse.csgraph import connected_components
 import sklearn
 import sklearn.metrics
 from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import LabelEncoder
 import subprocess
 import tempfile
 from os import mkdir, path, remove, stat
@@ -877,7 +879,7 @@ def graph_connectivity(adata_post, label_key):
 
 def __entropy_from_indices(indices, n_cat):
     return entropy(np.array(itemfreq(indices)[:, 1].astype(np.int32)), base=n_cat)
-    
+
 def entropy_batch_mixing(adata, label_key="batch",
                          n_neighbors=50, n_pools=50, n_samples_per_pool=100):
     """Computes Entory of Batch mixing metric for ``adata`` given the batch column name.
