@@ -5,6 +5,7 @@ from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 import sklearn
 import sklearn.metrics
+from sklearn.neighbors import NearestNeighbors
 import subprocess
 import tempfile
 from os import mkdir, path, remove, stat
@@ -860,8 +861,9 @@ def graph_connectivity(adata_post, label_key):
     Metric that quantifies how connected the subgraph corresponding to each batch cluster is.
     """
     if 'neighbors' not in adata_post.uns:
-        raise KeyError('Please compute the neighborhood graph before running this '
-                       'function!')
+        sc.pp.neighbors(adata_post)
+        #raise KeyError('Please compute the neighborhood graph before running this '
+        #               'function!')
 
     clust_res = [] 
 
@@ -873,6 +875,9 @@ def graph_connectivity(adata_post, label_key):
 
     return np.mean(clust_res)
 
+def __entropy_from_indices(indices, n_cat):
+    return entropy(np.array(itemfreq(indices)[:, 1].astype(np.int32)), base=n_cat)
+    
 def entropy_batch_mixing(adata, label_key="batch",
                          n_neighbors=50, n_pools=50, n_samples_per_pool=100):
     """Computes Entory of Batch mixing metric for ``adata`` given the batch column name.
