@@ -23,7 +23,8 @@ def set_axis_style(ax, labels):
 
 
 # Experiment Params
-experiments = ["pancreas","pbmc","lung","scvelo","brain"]
+experiments = ["lung","scvelo","brain"]
+#experiments = ["pancreas","pbmc","lung","scvelo","brain"]
 test_nrs = [10]
 save_dir = "tranvae_testing/tranvae_surg_10/"
 

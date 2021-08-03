@@ -42,7 +42,7 @@ overconfidence_scale = None
 
 
 early_stopping_kwargs = {
-    "early_stopping_metric": "val_classifier_loss",
+    "early_stopping_metric": "val_loss",
     "mode": "min",
     "threshold": 0,
     "patience": 20,

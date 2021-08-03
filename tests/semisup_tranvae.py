@@ -24,9 +24,9 @@ def set_axis_style(ax, labels):
 
 # Experiment Params
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
-experiments = ["pancreas","pbmc","lung","scvelo","brain"]
+experiments = ["pancreas"]
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_semi_10/"
+save_dir = "tranvae_testing/tranvae_semi_log1p_1/"
 
 unlabeled_strat = "batch"
 cells_per_ct = 2000
@@ -37,15 +37,16 @@ use_mmd = False
 
 # Training Params
 tranvae_epochs = 500
-pretraining_epochs = 100
+pretraining_epochs = 200
 alpha_epoch_anneal = 1e6
-eta = 10
+eta = 1
 tau = 0
 clustering_res = 1
 labeled_loss_metric = "hyperbolic"
 unlabeled_loss_metric = "hyperbolic"
 class_metric = "hyperbolic"
 overconfidence_scale = None
+hyperbolic_log1p = True
 
 
 early_stopping_kwargs = {
@@ -233,7 +234,8 @@ for experiment in experiments:
             clustering_res=clustering_res,
             labeled_loss_metric=labeled_loss_metric,
             unlabeled_loss_metric=unlabeled_loss_metric,
-            overconfidence_scale=overconfidence_scale
+            overconfidence_scale=overconfidence_scale,
+            hyperbolic_log1p=hyperbolic_log1p
         )
         ref_time = time.time() - ref_time
         ref_path = os.path.expanduser(f'~/Documents/{save_dir}/{experiment}/{test_nr}_model')
@@ -383,3 +385,26 @@ for experiment in experiments:
                     f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_umap_{key}.png'),
                 bbox_inches='tight')
             plt.close()
+
+        if labeled_loss_metric == 'hyperbolic':
+            data_latent = tranvae.get_latent(hyperbolic=True)
+            adata_latent = sc.AnnData(data_latent)
+            adata_latent.obs['batch'] = adata.obs[condition_key].tolist()
+            for cell_key in cell_type_key:
+                adata_latent.obs[cell_key] = adata.obs[cell_key].tolist()
+
+            sc.pp.neighbors(adata_latent, n_neighbors=8)
+            sc.tl.leiden(adata_latent)
+            sc.tl.umap(adata_latent)
+            for key in cell_type_key:
+                sc.pl.umap(adata_latent,
+                           color=['batch', key],
+                           frameon=False,
+                           wspace=0.6,
+                           show=False
+                           )
+                plt.savefig(
+                    os.path.expanduser(
+                        f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_umap_hyperbolic.png'),
+                    bbox_inches='tight')
+                plt.close()

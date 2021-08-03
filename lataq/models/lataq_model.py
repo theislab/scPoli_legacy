@@ -4,6 +4,7 @@ import scanpy as sc
 
 from anndata import AnnData
 from typing import Optional, Union
+import torch.nn.functional as F
 
 from scarches.models.base._utils import _validate_var_names
 from scarches.models.base._base import BaseMixin
@@ -164,7 +165,8 @@ class LATAQ(BaseMixin):
         self,
         x: Optional[np.ndarray] = None,
         c: Optional[np.ndarray] = None,
-        mean: bool = False
+        mean: bool = False,
+        hyperbolic: bool = False
     ):
         """Map `x` in to the latent space. This function will feed data in encoder  and return  z for each sample in
            data.
@@ -207,7 +209,15 @@ class LATAQ(BaseMixin):
             latent = self.model.get_latent(x[batch,:].to(device), c[batch].to(device), mean)
             latents += [latent.cpu().detach()]
 
-        return np.array(torch.cat(latents))
+        latents = torch.cat(latents)
+
+        if hyperbolic:
+            transformation_m = (
+                    torch.tanh(torch.norm(latents, p=2, dim=1) / 2) / torch.norm(latents, p=2, dim=1)
+            ).unsqueeze(dim=1).expand(-1, latents.size(1))
+            latents = transformation_m * latents
+
+        return np.array(latents)
 
     def classify(
             self,
@@ -300,7 +310,13 @@ class LATAQ(BaseMixin):
         self.landmarks_unlabeled_ = self.model.landmarks_unlabeled
         self.cell_types_[cell_type_name] = [obs_key]
 
-    def get_landmarks_info(self, landmark_set='l', metric="dist", threshold=0):
+    def get_landmarks_info(
+            self,
+            landmark_set='l',
+            metric="dist",
+            threshold=0,
+            hyperbolic=False
+    ):
         if landmark_set == 'l':
             landmarks = self.landmarks_labeled_["mean"].detach().cpu().numpy()
             batch_name = "Landmark-Set Labeled"
@@ -311,7 +327,12 @@ class LATAQ(BaseMixin):
             print(f"Parameter 'landmark_set' has either to be 'l' for labeled landmark set or 'u' "
                   f"for the unlabeled landmark set. But given value was {landmark_set}")
             return
-        landmarks_info = sc.AnnData(landmarks)
+        if hyperbolic:
+            norm = np.sum(landmarks ** 2, axis=1)
+            norm = np.resize(norm, (landmarks.shape[1], landmarks.shape[0])).T
+            landmarks_info = sc.AnnData(landmarks / np.sqrt(norm))
+        else:
+            landmarks_info = sc.AnnData(landmarks)
         landmarks_info.obs[self.condition_key_] = np.array((landmarks.shape[0] * [batch_name]))
 
         results = self.classify(landmarks, landmark=True, metric=metric, threshold=threshold)

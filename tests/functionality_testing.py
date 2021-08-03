@@ -3,6 +3,13 @@ import numpy as np
 import torch.nn.functional as F
 
 
+x = np.random.rand(63,10)
+norm = np.sum(x**2, axis=1)
+norm = np.resize(norm, (x.shape[1],x.shape[0])).T
+x = x / np.sqrt(norm)
+print(np.sum(x**2, axis=1))
+exit()
+
 n_celltypes = 5
 n_cells = 63
 latent = torch.rand((n_cells,10))

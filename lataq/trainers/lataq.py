@@ -71,6 +71,7 @@ class LATAQtrainer(Trainer):
             unlabeled_loss_metric: str = "dist",
             unlabeled_weight: float = 0.001,
             overconfidence_scale: int = None,
+            hyperbolic_log1p: bool = False,
             eta: float = 1,
             tau: float = 0,
             **kwargs
@@ -78,10 +79,14 @@ class LATAQtrainer(Trainer):
 
         super().__init__(model, adata, **kwargs)
         self.quantile = 0.95
-        if overconfidence_scale == None:
+        if overconfidence_scale is None:
             self.overconfidence_scale = self.model.latent_dim
         else:
             self.overconfidence_scale = overconfidence_scale
+        if hyperbolic_log1p:
+            self.log1p_scale = 1
+        else:
+            self.log1p_scale = 0
 
         self.labeled_loss_metric = labeled_loss_metric
         self.unlabeled_loss_metric = unlabeled_loss_metric
@@ -426,7 +431,8 @@ class LATAQtrainer(Trainer):
 
             # Buseman loss
             b_loss = torch.log(
-                torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
+                self.log1p_scale + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
+            )
 
             # Overconfidence penalty loss
             overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
@@ -495,7 +501,8 @@ class LATAQtrainer(Trainer):
 
             # Buseman loss
             b_loss = torch.log(
-                torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2))
+                self.log1p_scale + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
+            )
 
             # Overconfidence penalty loss
             overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
