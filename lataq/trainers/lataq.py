@@ -9,7 +9,7 @@ from sklearn.cluster import KMeans
 from scarches.trainers.trvae.trainer import Trainer
 from scarches.trainers.trvae._utils import make_dataset
 
-from ._utils import euclidean_dist, t_dist, target_distribution, kl_loss, get_overlap
+from ._utils import euclidean_dist, t_dist, target_distribution, kl_loss, cov
 
 
 class LATAQtrainer(Trainer):
@@ -78,7 +78,8 @@ class LATAQtrainer(Trainer):
     ):
 
         super().__init__(model, adata, **kwargs)
-        self.quantile = 0.95
+
+        # Only necessary for hyperbolic loss:
         if overconfidence_scale is None:
             self.overconfidence_scale = self.model.latent_dim
         else:
@@ -103,11 +104,9 @@ class LATAQtrainer(Trainer):
         self.landmarks_labeled = None
         self.landmarks_labeled_q = None
         self.landmarks_unlabeled = None
-        self.landmarks_unlabeled_q = None
         self.best_landmarks_labeled = None
         self.best_landmarks_labeled_q = None
         self.best_landmarks_unlabeled = None
-        self.best_landmarks_unlabeled_q = None
         self.lndmk_optim = None
         # Set indices for labeled data
         if labeled_indices is None:
@@ -163,8 +162,7 @@ class LATAQtrainer(Trainer):
                         for value in self.model.new_landmarks:
                             indices = labeled_cell_types.eq(value).nonzero(as_tuple=False)[:, 0]
                             landmark = labeled_latent[indices].mean(0)
-                            dist = euclidean_dist(labeled_latent[indices], landmark)
-                            landmark_q = torch.quantile(dist, self.quantile).unsqueeze(0)
+                            landmark_q = cov(labeled_latent[indices]).unsqueeze(0)
                             self.landmarks_labeled = torch.cat([self.landmarks_labeled, landmark])
                             self.landmarks_labeled_q = torch.cat([self.landmarks_labeled_q, landmark_q])
             else:
@@ -230,15 +228,6 @@ class LATAQtrainer(Trainer):
 
                 with torch.no_grad():
                     [self.landmarks_unlabeled[i].copy_(leiden_lndmk[i, :]) for i in range(leiden_lndmk.shape[0])]
-                    dists = euclidean_dist(latent, torch.stack(self.landmarks_unlabeled).squeeze())
-                    min_dist, y_hat = torch.min(dists, 1)
-                    quantiles = []
-                    for idx_class in range(len(torch.stack(self.landmarks_unlabeled).squeeze())):
-                        if idx_class in y_hat:
-                            quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0).unsqueeze(0))
-                        else:
-                            quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
-                    self.landmarks_unlabeled_q = torch.stack(quantiles)
 
     def on_epoch_begin(self, lr, eps):
         if self.epoch == self.pretraining_epochs:
@@ -258,7 +247,6 @@ class LATAQtrainer(Trainer):
             self.best_landmarks_labeled = self.landmarks_labeled
             self.best_landmarks_labeled_q = self.landmarks_labeled_q
             self.best_landmarks_unlabeled = self.landmarks_unlabeled
-            self.best_landmarks_unlabeled_q = self.landmarks_unlabeled_q
 
     def loss(self, total_batch=None):
         latent, recon_loss, kl_loss, mmd_loss = self.model(**total_batch)
@@ -328,7 +316,6 @@ class LATAQtrainer(Trainer):
                 update_loss, args_count = self.landmark_unlabeled_loss(
                     latent,
                     torch.stack(self.landmarks_unlabeled).squeeze(),
-                    update_q=True,
                     update_pos=True,
                 )
                 update_loss.backward()
@@ -344,33 +331,14 @@ class LATAQtrainer(Trainer):
             self.landmarks_labeled = self.best_landmarks_labeled
             self.landmarks_labeled_q = self.best_landmarks_labeled_q
             self.landmarks_unlabeled = self.best_landmarks_unlabeled
-            self.landmarks_unlabeled_q = self.best_landmarks_unlabeled_q
-
-        label_categories = self.train_data.labeled_vector.unique().tolist()
-        if 0 in label_categories or self.model.unknown_ct_names is not None:
-            latent = self.get_latent_train()
-            landmarks = torch.stack(self.landmarks_unlabeled).squeeze()
-
-            dists = euclidean_dist(latent, landmarks)
-            min_dist, y_hat = torch.min(dists, 1)
-
-            quantiles = []
-            for idx_class in range(len(landmarks)):
-                if idx_class in y_hat:
-                    quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0).unsqueeze(0))
-                else:
-                    quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
-            self.landmarks_unlabeled_q = torch.stack(quantiles)
 
         self.model.landmarks_labeled["mean"] = self.landmarks_labeled
         self.model.landmarks_labeled["q"] = self.landmarks_labeled_q
 
         if 0 in self.train_data.labeled_vector.unique().tolist() or self.model.unknown_ct_names is not None:
             self.model.landmarks_unlabeled["mean"] = torch.stack(self.landmarks_unlabeled).squeeze()
-            self.model.landmarks_unlabeled["q"] = self.landmarks_unlabeled_q
         else:
             self.model.landmarks_unlabeled["mean"] = self.landmarks_unlabeled
-            self.model.landmarks_unlabeled["q"] = self.landmarks_unlabeled_q
 
     def update_labeled_landmarks(self, latent, labels, previous_landmarks, previous_landmarks_q, mask=None):
         with torch.no_grad():
@@ -381,8 +349,7 @@ class LATAQtrainer(Trainer):
                 if (mask is None or value in mask) and value in unique_labels:
                     indices = labels.eq(value).nonzero(as_tuple=False)[:, 0]
                     landmark = latent[indices, :].mean(0).unsqueeze(0)
-                    dist = euclidean_dist(latent[indices], landmark)
-                    landmark_q = torch.quantile(dist, self.quantile, dim=0).unsqueeze(0)
+                    landmark_q = cov(latent[indices, :]).unsqueeze(0)
                     landmarks_mean = torch.cat(
                         [landmarks_mean, landmark]) if landmarks_mean is not None else landmark
                     landmarks_q = torch.cat(
@@ -466,21 +433,11 @@ class LATAQtrainer(Trainer):
 
         return loss
 
-    def landmark_unlabeled_loss(self, latent, landmarks, update_q=False, update_pos=False):
+    def landmark_unlabeled_loss(self, latent, landmarks, update_pos=False):
         dists = euclidean_dist(latent, landmarks)
         min_dist, y_hat = torch.min(dists, 1)
         args_uniq = torch.unique(y_hat, sorted=True)
         args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
-
-        with torch.no_grad():
-            if update_q:
-                quantiles = []
-                for idx_class in range(len(landmarks)):
-                    if idx_class in y_hat:
-                        quantiles.append(torch.quantile(min_dist[y_hat == idx_class], self.quantile, dim=0).unsqueeze(0))
-                    else:
-                        quantiles.append(torch.tensor(0.0, device=self.device).unsqueeze(0))
-                self.landmarks_unlabeled_q = torch.stack(quantiles)
 
         if self.unlabeled_loss_metric == "dist":
             # Basic euclidean distance loss

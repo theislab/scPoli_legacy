@@ -26,7 +26,7 @@ def set_axis_style(ax, labels):
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
 experiments = ["pancreas"]
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_semi_log1p_1/"
+save_dir = "tranvae_testing/tranvae_semi_cov/"
 
 unlabeled_strat = "batch"
 cells_per_ct = 2000
@@ -36,17 +36,17 @@ latent_dim = 10
 use_mmd = False
 
 # Training Params
-tranvae_epochs = 500
-pretraining_epochs = 200
+tranvae_epochs = 50
+pretraining_epochs = 10
 alpha_epoch_anneal = 1e6
 eta = 1
 tau = 0
 clustering_res = 1
-labeled_loss_metric = "hyperbolic"
-unlabeled_loss_metric = "hyperbolic"
-class_metric = "hyperbolic"
+labeled_loss_metric = "dist"
+unlabeled_loss_metric = "dist"
+class_metric = "dist"
 overconfidence_scale = None
-hyperbolic_log1p = True
+hyperbolic_log1p = False
 
 
 early_stopping_kwargs = {

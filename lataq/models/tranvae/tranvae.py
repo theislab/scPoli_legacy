@@ -34,7 +34,7 @@ class tranVAE(trVAE):
             for unknown_ct in self.unknown_ct_names:
                 self.cell_type_encoder[unknown_ct] = -1
         self.landmarks_labeled = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
-        self.landmarks_unlabeled = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
+        self.landmarks_unlabeled = {"mean": None} if landmarks_unlabeled is None else landmarks_unlabeled
         self.new_landmarks = None
 
         if self.landmarks_labeled["mean"] is not None:
@@ -48,17 +48,12 @@ class tranVAE(trVAE):
         self.n_cell_types += 1
         self.cell_type_encoder = {k: v for k, v in zip(self.cell_types, range(len(self.cell_types)))}
         new_landmark = self.landmarks_unlabeled["mean"][landmarks].mean(0).unsqueeze(0)
-        new_landmark_q = torch.tensor(
-            0.0,
+
+        #TODO: CALCULATE COV WITH CLUSTER CORRESPONDING CELLS INSTEAD OF SETTING TO ZERO
+        new_landmark_q = torch.zeros(
+            1, 10, 10,
             device=self.landmarks_unlabeled["q"].device, requires_grad=False
-        ).unsqueeze(0).unsqueeze(0)
-        for landmark in landmarks:
-            cover = torch.cdist(
-                new_landmark,
-                self.landmarks_unlabeled["mean"][landmark].unsqueeze(0)
-            ) + self.landmarks_unlabeled["q"][landmark].unsqueeze(0)
-            if cover > new_landmark_q:
-                new_landmark_q = cover
+        )
 
         self.landmarks_labeled["mean"] = torch.cat(
             (self.landmarks_labeled["mean"], new_landmark),
