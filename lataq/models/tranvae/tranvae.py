@@ -1,5 +1,5 @@
 import torch
-from torch.distributions import Normal, kl_divergence
+from torch.distributions import Normal, kl_divergence, MultivariateNormal
 import torch.nn.functional as F
 from typing import Optional
 import numpy as np
@@ -51,8 +51,8 @@ class tranVAE(trVAE):
 
         #TODO: CALCULATE COV WITH CLUSTER CORRESPONDING CELLS INSTEAD OF SETTING TO ZERO
         new_landmark_q = torch.zeros(
-            1, 10, 10,
-            device=self.landmarks_unlabeled["q"].device, requires_grad=False
+            1, self.latent_dim, self.latent_dim,
+            device=self.landmarks_labeled["q"].device, requires_grad=False
         )
 
         self.landmarks_labeled["mean"] = torch.cat(
@@ -95,6 +95,23 @@ class tranVAE(trVAE):
             )
             class_m = F.normalize(class_m, p=1, dim=1)
             probs, preds = torch.max(class_m, dim=1)
+
+        elif metric == "gaussian":
+            probs = []
+            for ct_class in classes_list:
+                mean = self.landmarks_labeled["mean"][ct_class, :]
+                cov_matrix = self.landmarks_labeled["q"][ct_class, :]
+
+                # This has to be fixed in a better way maybe
+                if torch.linalg.det(cov_matrix) == 0:
+                    cov_matrix = cov_matrix + torch.eye(10, device=cov_matrix.device) * 1e-3
+                ct_distr = MultivariateNormal(mean, cov_matrix)
+                probs.append(ct_distr.log_prob(latent).exp())
+
+            probs = torch.stack(probs)
+            probs = (probs / probs.sum(0)).T
+            probs, preds = torch.max(probs, dim=1)
+            preds = classes_list[preds]
 
         elif metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile

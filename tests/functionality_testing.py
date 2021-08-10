@@ -1,6 +1,75 @@
 import torch
 import numpy as np
 import torch.nn.functional as F
+from torch.distributions import MultivariateNormal, LowRankMultivariateNormal
+
+# Check 0 determinant behavior#
+size = 20
+t = torch.tensor(
+    [[     0.003,      0.003,      0.002,     -0.000,      0.002,     -0.003,
+          0.003,     -0.003,     -0.001,      0.001],
+    [     0.003,      0.005,      0.002,      0.000,      0.003,     -0.003,
+          0.004,     -0.004,     -0.002,      0.000],
+    [     0.002,      0.002,      0.001,      0.000,      0.001,     -0.001,
+          0.001,     -0.001,     -0.001,      0.000],
+    [    -0.000,      0.000,      0.000,      0.002,     -0.001,      0.002,
+         -0.001,     -0.000,     -0.001,     -0.000],
+    [     0.002,      0.003,      0.001,     -0.001,      0.003,     -0.003,
+          0.004,     -0.003,     -0.001,      0.000],
+    [    -0.003,     -0.003,     -0.001,      0.002,     -0.003,      0.006,
+         -0.005,      0.003,     -0.001,     -0.001],
+    [     0.003,      0.004,      0.001,     -0.001,      0.004,     -0.005,
+          0.006,     -0.004,     -0.001,      0.001],
+    [    -0.003,     -0.004,     -0.001,     -0.000,     -0.003,      0.003,
+         -0.004,      0.004,      0.002,     -0.000],
+    [    -0.001,     -0.002,     -0.001,     -0.001,     -0.001,     -0.001,
+         -0.001,      0.002,      0.003,      0.001],
+    [     0.001,      0.000,      0.000,     -0.000,      0.000,     -0.001,
+          0.001,     -0.000,      0.001,      0.001]])
+
+t = t.type(torch.DoubleTensor)
+t_eps = t + torch.eye(10) * 1e-3
+
+c = torch.tensor(
+    [[ 0.020, -0.002,  0.003, -0.000, -0.011,  0.007, -0.004,  0.007, -0.002,
+     -0.013],
+    [-0.002,  0.023, -0.004, -0.001,  0.006, -0.012, -0.001, -0.009, -0.004,
+      0.021],
+    [ 0.003, -0.004,  0.025, -0.001, -0.002,  0.000,  0.000, -0.000,  0.000,
+     -0.006],
+    [-0.000, -0.001, -0.001,  0.013,  0.004,  0.006,  0.001, -0.003, -0.002,
+      0.004],
+    [-0.011,  0.006, -0.002,  0.004,  0.028, -0.006,  0.001, -0.001,  0.004,
+     -0.000],
+    [ 0.007, -0.012,  0.000,  0.006, -0.006,  0.017, -0.003,  0.006,  0.003,
+     -0.013],
+    [-0.004, -0.001,  0.000,  0.001,  0.001, -0.003,  0.009, -0.000,  0.003,
+     -0.001],
+    [ 0.007, -0.009, -0.000, -0.003, -0.001,  0.006, -0.000,  0.049, -0.002,
+     -0.013],
+    [-0.002, -0.004,  0.000, -0.002,  0.004,  0.003,  0.003, -0.002,  0.008,
+     -0.011],
+    [-0.013,  0.021, -0.006,  0.004, -0.000, -0.013, -0.001, -0.013, -0.011,
+      0.046]]
+)
+c = torch.eye(size)
+c = c.type(torch.DoubleTensor)
+c_eps = c + torch.eye(size) * 1e-16
+mean = torch.zeros(size)
+
+m =  MultivariateNormal(mean, t_eps, validate_args=False)
+#n = LowRankMultivariateNormal(mean, t, cov_diag=torch.diag(t),validate_args=False)
+
+o = MultivariateNormal(mean, c, validate_args=False)
+p = LowRankMultivariateNormal(mean, c, cov_diag=torch.diag(c),validate_args=False)
+q = MultivariateNormal(mean, c_eps, validate_args=False)
+
+x = np.random.rand(63,size)
+x_t = torch.DoubleTensor(x)
+
+print(o.log_prob(x_t) - p.log_prob(x_t))
+print(o.log_prob(x_t) - q.log_prob(x_t))
+exit()
 
 # Test covariance behavior
 def cov(x, rowvar=False, bias=False, ddof=None, aweights=None):
@@ -76,6 +145,23 @@ print(cov_xyzx.size())
 zeros = torch.zeros(1,10,10)
 cov_xyzxz = torch.cat([cov_xyzx, zeros])
 print(cov_xyzxz.size())
+mean_x = x_t.mean(0)
+mean_y = y_t.mean(0)
+mean_z = z_t.mean(0)
+probs = []
+x_distr = MultivariateNormal(mean_x, cov_xyzxz[0])
+probs.append(x_distr.log_prob(x_t).exp())
+y_distr = MultivariateNormal(mean_x, cov_xyzxz[1])
+probs.append(y_distr.log_prob(y_t).exp())
+z_distr = MultivariateNormal(mean_x, cov_xyzxz[2])
+probs.append(z_distr.log_prob(z_t).exp())
+probs = torch.stack(probs)
+print(probs.sum(0))
+probs = (probs / probs.sum(0)).T
+probs, preds = torch.max(probs, dim=1)
+print(probs.size())
+print(preds)
+print(cov_xyzxz[0])
 exit()
 
 #Test Norm behavior

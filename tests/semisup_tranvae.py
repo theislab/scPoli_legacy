@@ -25,8 +25,9 @@ def set_axis_style(ax, labels):
 # Experiment Params
 #experiments = ["pancreas","pbmc","lung","scvelo","brain"]
 experiments = ["pancreas"]
+unknown_ct_names = None
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_semi_cov/"
+save_dir = "tranvae_testing/tranvae_semi_cov_10/"
 
 unlabeled_strat = "batch"
 cells_per_ct = 2000
@@ -36,15 +37,15 @@ latent_dim = 10
 use_mmd = False
 
 # Training Params
-tranvae_epochs = 50
-pretraining_epochs = 10
+tranvae_epochs = 500
+pretraining_epochs = 200
 alpha_epoch_anneal = 1e6
-eta = 1
+eta = 10
 tau = 0
 clustering_res = 1
 labeled_loss_metric = "dist"
 unlabeled_loss_metric = "dist"
-class_metric = "dist"
+class_metric = "gaussian"
 overconfidence_scale = None
 hyperbolic_log1p = False
 
@@ -200,6 +201,11 @@ for experiment in experiments:
         if unlabeled_strat == "batch":
             labeled_ind = indices[adata.obs.study.isin(reference)].tolist()
             labeled_adata = adata[adata.obs.study.isin(reference)].copy()
+            unique_labels = labeled_adata.obs[cell_type_key[0]].unique().tolist()
+            lab_indices = np.arange(len(labeled_adata))
+            for label in unique_labels:
+                lab_ind = lab_indices[labeled_adata.obs[cell_type_key[0]] == label]
+                print(label, len(lab_ind))
             unlabeled_adata = adata[adata.obs.study.isin(query)].copy()
         if unlabeled_strat == "ct":
             labeled_ind = []
@@ -212,7 +218,6 @@ for experiment in experiments:
             unlabeled_ind = np.delete(indices, labeled_ind).tolist()
             labeled_adata = adata[labeled_ind].copy()
             unlabeled_adata = adata[unlabeled_ind].copy()
-
         tranvae = TRANVAE(
             adata=adata,
             condition_key=condition_key,
@@ -221,9 +226,10 @@ for experiment in experiments:
             latent_dim=latent_dim,
             use_mmd=use_mmd,
             labeled_indices=labeled_ind,
-            unknown_ct_names=None
+            unknown_ct_names=unknown_ct_names
         )
         ref_time = time.time()
+        print(tranvae.model.cell_type_encoder)
         tranvae.train(
             n_epochs=tranvae_epochs,
             early_stopping_kwargs=early_stopping_kwargs,
