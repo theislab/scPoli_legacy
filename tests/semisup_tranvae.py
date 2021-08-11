@@ -27,7 +27,7 @@ def set_axis_style(ax, labels):
 experiments = ["pancreas"]
 unknown_ct_names = None
 test_nrs = [10]
-save_dir = "tranvae_testing/tranvae_semi_cov_10/"
+save_dir = "tranvae_testing/tranvae_semi_cov/"
 
 unlabeled_strat = "batch"
 cells_per_ct = 2000
@@ -40,7 +40,7 @@ use_mmd = False
 tranvae_epochs = 500
 pretraining_epochs = 200
 alpha_epoch_anneal = 1e6
-eta = 10
+eta = 1
 tau = 0
 clustering_res = 1
 labeled_loss_metric = "dist"

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from torch.distributions import Normal, kl_divergence
+from torch.distributions import Normal, kl_divergence, MultivariateNormal
 from typing import Optional
 
 from scarches.models.trvae._utils import one_hot_encoder
@@ -60,7 +60,7 @@ class EmbedCVAE(nn.Module):
             else landmarks_labeled
         )
         self.landmarks_unlabeled = (
-            {"mean": None, "q": None} 
+            {"mean": None}
             if landmarks_unlabeled is None 
             else landmarks_unlabeled
         )
@@ -206,52 +206,79 @@ class EmbedCVAE(nn.Module):
 
         return z1, recon_loss, kl_div, mmd_loss
 
-    def classify(
-        self, 
-        x, 
-        c=None, 
-        landmark=False, 
-        classes_list=None, 
-        metric="dist"
-    ):
+    def classify(self, x, c=None, landmark=False, classes_list=None, metric="dist"):
         if landmark:
             latent = x
         else:
-            latent = self.get_latent(x,c)
+            latent = self.get_latent(x, c)
 
         dists = euclidean_dist(latent, self.landmarks_labeled["mean"][classes_list, :])
 
         if metric == "dist":
+            # Idea of using euclidean distances for classification
             weighted_distances = F.softmax(-dists, dim=1)
             probs, preds = torch.max(weighted_distances, dim=1)
             preds = classes_list[preds]
+
+        elif metric == "hyperbolic":
+            # Transform Landmarks to hyperbolic ideal points
+            h_landmarks = F.normalize(self.landmarks_labeled["mean"][classes_list, :], p=2, dim=1)
+
+            # Transform latent to hyperbolic space
+            transformation_m = (
+                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1)
+            ).unsqueeze(dim=1).expand(-1, latent.size(1))
+            h_latent = transformation_m * latent
+
+            # Get classification matrix n_cells x n_cell_types and get the predictions by max
+            class_m = torch.matmul(
+                h_latent / torch.norm(h_latent, p=2, dim=1).unsqueeze(dim=1).expand(-1, latent.size(1)),
+                h_landmarks.T
+            )
+            class_m = F.normalize(class_m, p=1, dim=1)
+            probs, preds = torch.max(class_m, dim=1)
+
+        elif metric == "gaussian":
+            probs = []
+            for ct_class in classes_list:
+                mean = self.landmarks_labeled["mean"][ct_class, :]
+                cov_matrix = self.landmarks_labeled["q"][ct_class, :]
+                # ID addition for stability
+                # This has to be fixed in a better way maybe
+                cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
+                # if torch.linalg.det(cov_matrix) == 0:
+                #    cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
+                ct_distr = MultivariateNormal(mean, cov_matrix)
+                probs.append(ct_distr.log_prob(latent).exp())
+
+            probs = torch.stack(probs)
+            probs = (probs / probs.sum(0)).T
+            probs, preds = torch.max(probs, dim=1)
+            preds = classes_list[preds]
+
+        elif metric == "overlap":
+            # Own idea of cell balls with center at landmark and radius of 95%-quantile
+            assert False, "NEEDS CHECK"
+            quantiles_view = self.landmarks_labeled["q"].unsqueeze(0).expand(dists.size(0), dists.size(1))
+            # overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
+            # overlap = 1 - (quantiles_view - overlap / quantiles_view)
+            overlap = dists / quantiles_view
+            overlap = (overlap.T / overlap.max(1)[0]).T
+            overlap = 1 - overlap
+            overlap = (overlap.T / overlap.sum(1)).T
+            probs, preds = torch.max(overlap, dim=1)
+            preds = classes_list[preds]
+
         elif metric == "seurat":
+            # Idea of using seurat distances for classification
+            # See https://www.cell.com/cell/pdf/S0092-8674(19)30559-8.pdf
+            assert False, "NEEDS CHECK"
             dists_t = 1 - (dists.T / dists.max(1)[0]).T
             prob = 1 - torch.exp(-dists_t / 4)
             prob = (prob.T / prob.sum(1)).T
             probs, preds = torch.max(prob, dim=1)
             preds = classes_list[preds]
-        elif metric == "overlap":
-            quantiles_view = (
-                self
-                .landmarks_labeled["q"]
-                .unsqueeze(0)
-                .expand(
-                    dists.size(0), 
-                    dists.size(1)
-                )
-            )
 
-            #overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
-            #overlap = 1 - (quantiles_view - overlap / quantiles_view)
-
-            overlap = dists / quantiles_view
-            overlap = (overlap.T / overlap.max(1)[0]).T
-            overlap = 1 - overlap
-
-            overlap = (overlap.T / overlap.sum(1)).T
-            probs, preds = torch.max(overlap, dim=1)
-            preds = classes_list[preds]
         else:
             assert False, f"'{metric}' is not a available as a loss function please choose " \
                           f"between 'exp', 'var' or 'seurat'!"

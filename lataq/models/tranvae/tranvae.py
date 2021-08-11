@@ -101,10 +101,11 @@ class tranVAE(trVAE):
             for ct_class in classes_list:
                 mean = self.landmarks_labeled["mean"][ct_class, :]
                 cov_matrix = self.landmarks_labeled["q"][ct_class, :]
-
+                # ID addition for stability
                 # This has to be fixed in a better way maybe
-                if torch.linalg.det(cov_matrix) == 0:
-                    cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
+                cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
+                #if torch.linalg.det(cov_matrix) == 0:
+                #    cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
                 ct_distr = MultivariateNormal(mean, cov_matrix)
                 probs.append(ct_distr.log_prob(latent).exp())
 
