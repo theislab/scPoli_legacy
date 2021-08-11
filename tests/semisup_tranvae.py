@@ -295,6 +295,7 @@ for experiment in experiments:
                 adata_latent.obs[cell_key] = unlabeled_adata.obs[cell_key].tolist()
                 adata_latent.obs[f'{cell_key}_pred'] = preds.tolist()
                 adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
+                adata_latent.obs[f'{cell_key}_prob'] = probs.tolist()
 
             adata_latent.write_h5ad(filename=os.path.expanduser(f'~/Documents/{save_dir}/'
                                                                 f'{experiment}/{test_nr}_query_adata.h5ad'))
@@ -316,7 +317,8 @@ for experiment in experiments:
 
             for key in cell_type_key:
                 sc.pl.umap(adata_latent,
-                           color=[key, f'{key}_pred', f'{key}_bool'],
+                           color=[key, f'{key}_pred', f'{key}_bool', f'{key}_prob'],
+                           ncols=2,
                            frameon=False,
                            wspace=0.6,
                            show=False
@@ -360,6 +362,7 @@ for experiment in experiments:
             adata_latent.obs[cell_key] = adata.obs[cell_key].tolist()
             adata_latent.obs[f'{cell_key}_pred'] = preds.tolist()
             adata_latent.obs[f'{cell_key}_bool'] = checks.tolist()
+            adata_latent.obs[f'{cell_key}_prob'] = probs.tolist()
 
         adata_latent.write_h5ad(filename=os.path.expanduser(
             f'~/Documents/{save_dir}/{experiment}/{test_nr}_full_adata.h5ad'))
@@ -381,7 +384,8 @@ for experiment in experiments:
 
         for key in cell_type_key:
             sc.pl.umap(adata_latent,
-                       color=[key, f'{key}_pred', f'{key}_bool'],
+                       color=[key, f'{key}_pred', f'{key}_bool', f'{key}_prob'],
+                       ncols=2,
                        frameon=False,
                        wspace=0.6,
                        show=False
