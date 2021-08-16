@@ -13,37 +13,49 @@ from lataq.trainers import LATAQtrainer
 
 
 class LATAQ(BaseMixin):
-    """Model for scArches class. This class contains the implementation of Conditional Variational Auto-encoder.
+    """Model for LATAQ class. This class contains the methods and functionalities for label transfer and landmark training.
 
-       Parameters
-       ----------
-       adata: : `~anndata.AnnData`
+        Parameters
+        ----------
+        adata: : `~anndata.AnnData`
             Annotated data matrix.
-       condition_key: String
+        condition_key: String
             column name of conditions in `adata.obs` data frame.
-       conditions: List
+        conditions: List
             List of Condition names that the used data will contain to get the right encoding when used after reloading.
-       hidden_layer_sizes: List
+        cell_type_keys: List
+            List of obs columns to use as cell type annotation for landmarks.
+        cell_types: Dictionary
+            Dictionary of cell types. Keys are cell types and values are cell_type_keys. Needed for surgery.
+        unknown_ct_names: List
+            List of strings with the names of cell clusters to be ignored for landmarks computation.
+        labeled_indices: List
+            List of integers with the indices of the labeled cells.
+        landmarks_labeled: Dictionary
+            Dictionary with keys mean, cov and the respective mean or covariate matrices for landmarks.
+        landmarks_unlabeled: Dictionary
+            Dictionary with keys mean and the respective mean for unlabeled landmarks.
+        hidden_layer_sizes: List
             A list of hidden layer sizes for encoder network. Decoder network will be the reversed order.
-       latent_dim: Integer
+        latent_dim: Integer
             Bottleneck layer (z)  size.
-       dr_rate: Float
+        dr_rate: Float
             Dropput rate applied to all layers, if `dr_rate`==0 no dropout will be applied.
-       use_mmd: Boolean
+        use_mmd: Boolean
             If 'True' an additional MMD loss will be calculated on the latent dim. 'z' or the first decoder layer 'y'.
-       mmd_on: String
+        mmd_on: String
             Choose on which layer MMD loss will be calculated on if 'use_mmd=True': 'z' for latent dim or 'y' for first
             decoder layer.
-       mmd_boundary: Integer or None
+        mmd_boundary: Integer or None
             Choose on how many conditions the MMD loss should be calculated on. If 'None' MMD will be calculated on all
             conditions.
-       recon_loss: String
+        recon_loss: String
             Definition of Reconstruction-Loss-Method, 'mse', 'nb' or 'zinb'.
-       beta: Float
+        beta: Float
             Scaling Factor for MMD loss
-       use_bn: Boolean
+        use_bn: Boolean
             If `True` batch normalization will be applied to layers.
-       use_ln: Boolean
+        use_ln: Boolean
             If `True` layer normalization will be applied to layers.
     """
     def __init__(
@@ -122,8 +134,8 @@ class LATAQ(BaseMixin):
         self.use_ln_ = use_ln
 
         self.input_dim_ = adata.n_vars
-        self.landmarks_labeled_ = {"mean": None, "q": None} if landmarks_labeled is None else landmarks_labeled
-        self.landmarks_unlabeled_ = {"mean": None, "q": None} if landmarks_unlabeled is None else landmarks_unlabeled
+        self.landmarks_labeled_ = {"mean": None, "cov": None} if landmarks_labeled is None else landmarks_labeled
+        self.landmarks_unlabeled_ = {"mean": None,} if landmarks_unlabeled is None else landmarks_unlabeled
 
         self.model_cell_types = list(self.cell_types_.keys())
         self.is_trained_ = False
@@ -171,15 +183,19 @@ class LATAQ(BaseMixin):
         """Map `x` in to the latent space. This function will feed data in encoder  and return  z for each sample in
            data.
 
-           Parameters
-           ----------
-           x
+            Parameters
+            ----------
+            x
                 Numpy nd-array to be mapped to latent space. `x` has to be in shape [n_obs, input_dim].
                 If None, then `self.adata.X` is used.
-           c
+            c
                 `numpy nd-array` of original (unencoded) desired labels for each sample.
-           mean
+            mean
                 return mean instead of random sample from the latent space
+            hyperbolic: Boolean
+                Use hyperbolic transformation of the latent space.
+            
+
 
            Returns
            -------
@@ -203,6 +219,7 @@ class LATAQ(BaseMixin):
         x = torch.tensor(x, device='cpu')
 
         latents = []
+        #batch the latent transformation process
         indices = torch.arange(x.size(0), device='cpu')
         subsampled_indices = indices.split(512)
         for batch in subsampled_indices:
@@ -227,13 +244,36 @@ class LATAQ(BaseMixin):
             metric="dist",
             threshold=0,
     ):
+        """
+            Classifies unlabeled cells using the landmarks obtained during training.
+            Data handling before call to model's classify method.
+
+            x:  np.ndarray
+                Features to be classified. If None the stored 
+                model's adata is used.
+            c: np.ndarray
+                Condition vector.
+            landmark:
+                Boolean whether to classify the gene features or landmarks stored
+                stored in the model.
+            metric:
+                Method to use for classification. Can be dist, gaussian, hyperbolic
+            threshold:
+                Threshold to use on the class probabilities to detect novel cell types,
+                or mark unknown cells.
+
+
+        """
         device = next(self.model.parameters()).device
+
+
         if not landmark:
+            #get the gene features from stored adata
             if x is None:
                 x = self.adata.X
                 if self.conditions_ is not None:
                     c = self.adata.obs[self.condition_key_]
-
+            #get the conditions from passed input
             if c is not None:
                 c = np.asarray(c)
                 if not set(c).issubset(self.conditions_):
@@ -246,8 +286,10 @@ class LATAQ(BaseMixin):
         x = torch.tensor(x, device='cpu')
 
         results = dict()
+        #loop through hierarchies
         for cell_type_key in self.cell_type_keys_:
             landmarks_idx = list()
+            #get indices of different landmarks corresponding to current hierarchy
             for i, key in enumerate(self.cell_types_.keys()):
                 if cell_type_key in self.cell_types_[key]:
                     landmarks_idx.append(i)
@@ -259,13 +301,13 @@ class LATAQ(BaseMixin):
             indices = torch.arange(x.size(0), device=device)
             subsampled_indices = indices.split(512)
             for batch in subsampled_indices:
-                if landmark:
+                if landmark: #classify landmarks used for unseen cell type
                     pred, prob = self.model.classify(
                         x[batch, :].to(device),
                         landmark=landmark,
                         classes_list=landmarks_idx,
                         metric=metric)
-                else:
+                else: #default routine, classify cell by cell
                     pred, prob = self.model.classify(
                         x[batch, :].to(device),
                         c[batch].to(device),
@@ -293,6 +335,7 @@ class LATAQ(BaseMixin):
 
     def add_new_cell_type(self, cell_type_name, obs_key, landmarks):
         """
+        Function used to add new annotation for a novel cell type.
 
         Parameters
         ----------
@@ -312,19 +355,33 @@ class LATAQ(BaseMixin):
 
     def get_landmarks_info(
             self,
-            landmark_set='l',
+            landmark_set='labeled',
             metric="dist",
             threshold=0,
             hyperbolic=False
     ):
-        if landmark_set == 'l':
+        """
+        Generates anndata file with landmark features and annotations.
+        
+        Parameters
+        ----------
+        cell_type_name: str
+            Name of the new cell type
+        landmarks: list
+            List of indices of the unlabeled landmarks that correspond to the new cell type
+
+        Returns
+        -------
+
+        """
+        if landmark_set == 'labeled':
             landmarks = self.landmarks_labeled_["mean"].detach().cpu().numpy()
             batch_name = "Landmark-Set Labeled"
-        elif landmark_set == 'u':
+        elif landmark_set == 'unlabeled':
             landmarks = self.landmarks_unlabeled_["mean"].detach().cpu().numpy()
             batch_name = "Landmark-Set Unlabeled"
         else:
-            print(f"Parameter 'landmark_set' has either to be 'l' for labeled landmark set or 'u' "
+            print(f"Parameter 'landmark_set' has either to be 'labeled' for labeled landmark set or 'unlabeled' "
                   f"for the unlabeled landmark set. But given value was {landmark_set}")
             return
         if hyperbolic:
