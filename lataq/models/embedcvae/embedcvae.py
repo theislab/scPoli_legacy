@@ -55,7 +55,7 @@ class EmbedCVAE(nn.Module):
             for unknown_ct in self.unknown_ct_names:
                 self.cell_type_encoder[unknown_ct] = -1
         self.landmarks_labeled = (
-            {"mean": None, "q": None} 
+            {"mean": None, "cov": None} 
             if landmarks_labeled is None 
             else landmarks_labeled
         )
@@ -206,7 +206,62 @@ class EmbedCVAE(nn.Module):
 
         return z1, recon_loss, kl_div, mmd_loss
 
+    def add_new_cell_type(self, cell_type_name, landmarks):
+        """
+        Function used to add new annotation for a novel cell type.
+
+        Parameters
+        ----------
+        cell_type_name: str
+            Name of the new cell type
+        landmarks: list
+            List of indices of the unlabeled landmarks that correspond to the new cell type
+
+        Returns
+        -------
+        """
+        self.cell_types.append(cell_type_name)
+        self.n_cell_types += 1
+        self.cell_type_encoder = {k: v for k, v in zip(self.cell_types, range(len(self.cell_types)))}
+        new_landmark = self.landmarks_unlabeled["mean"][landmarks].mean(0).unsqueeze(0)
+
+        #TODO: CALCULATE COV WITH CLUSTER CORRESPONDING CELLS INSTEAD OF SETTING TO ZERO
+        new_landmark_q = torch.zeros(
+            1, self.latent_dim, self.latent_dim,
+            device=self.landmarks_labeled["cov"].device, requires_grad=False
+        )
+
+        self.landmarks_labeled["mean"] = torch.cat(
+            (self.landmarks_labeled["mean"], new_landmark),
+            dim=0
+        )
+        self.landmarks_labeled["cov"] = torch.cat(
+            (self.landmarks_labeled["cov"], new_landmark_q),
+            dim=0
+        )
+
+
     def classify(self, x, c=None, landmark=False, classes_list=None, metric="dist"):
+        """
+            Classifies unlabeled cells using the landmarks obtained during training.
+            Data handling before call to model's classify method.
+
+            x:  np.ndarray
+                Features to be classified. If None the stored 
+                model's adata is used.
+            c: np.ndarray
+                Condition vector.
+            landmark:
+                Boolean whether to classify the gene features or landmarks stored
+                stored in the model.
+            metric:
+                Method to use for classification. Can be dist, gaussian, hyperbolic
+            threshold:
+                Threshold to use on the class probabilities to detect novel cell types,
+                or mark unknown cells.
+
+
+        """
         if landmark:
             latent = x
         else:
@@ -242,7 +297,7 @@ class EmbedCVAE(nn.Module):
             probs = []
             for ct_class in classes_list:
                 mean = self.landmarks_labeled["mean"][ct_class, :]
-                cov_matrix = self.landmarks_labeled["q"][ct_class, :]
+                cov_matrix = self.landmarks_labeled["cov"][ct_class, :]
                 # ID addition for stability
                 # This has to be fixed in a better way maybe
                 cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
@@ -259,7 +314,7 @@ class EmbedCVAE(nn.Module):
         elif metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile
             assert False, "NEEDS CHECK"
-            quantiles_view = self.landmarks_labeled["q"].unsqueeze(0).expand(dists.size(0), dists.size(1))
+            quantiles_view = self.landmarks_labeled["cov"].unsqueeze(0).expand(dists.size(0), dists.size(1))
             # overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
             # overlap = 1 - (quantiles_view - overlap / quantiles_view)
             overlap = dists / quantiles_view

@@ -85,7 +85,7 @@ class EMBEDCVAE(LATAQ):
         )
         if self.landmarks_labeled_["mean"] is not None:
             self.landmarks_labeled_["mean"] = self.landmarks_labeled_["mean"].to(next(self.model.parameters()).device)
-            self.landmarks_labeled_["q"] = self.landmarks_labeled_["q"].to(next(self.model.parameters()).device)
+            self.landmarks_labeled_["cov"] = self.landmarks_labeled_["cov"].to(next(self.model.parameters()).device)
         if self.landmarks_unlabeled_["mean"] is not None:
             self.landmarks_unlabeled_["mean"] = self.landmarks_unlabeled_["mean"].to(next(self.model.parameters()).device)
 
