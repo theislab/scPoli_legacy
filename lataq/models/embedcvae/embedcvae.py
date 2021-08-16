@@ -7,7 +7,7 @@ from typing import Optional
 
 from scarches.models.trvae._utils import one_hot_encoder
 from scarches.models.trvae.losses import mse, zinb, nb
-from .._utils import euclidean_dist
+from lataq.trainers._utils import euclidean_dist
 
 class EmbedCVAE(nn.Module):
     def __init__(
@@ -226,7 +226,7 @@ class EmbedCVAE(nn.Module):
         new_landmark = self.landmarks_unlabeled["mean"][landmarks].mean(0).unsqueeze(0)
 
         #TODO: CALCULATE COV WITH CLUSTER CORRESPONDING CELLS INSTEAD OF SETTING TO ZERO
-        new_landmark_q = torch.zeros(
+        new_landmark_cov = torch.zeros(
             1, self.latent_dim, self.latent_dim,
             device=self.landmarks_labeled["cov"].device, requires_grad=False
         )
@@ -236,7 +236,7 @@ class EmbedCVAE(nn.Module):
             dim=0
         )
         self.landmarks_labeled["cov"] = torch.cat(
-            (self.landmarks_labeled["cov"], new_landmark_q),
+            (self.landmarks_labeled["cov"], new_landmark_cov),
             dim=0
         )
 
