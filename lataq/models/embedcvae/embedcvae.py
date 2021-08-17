@@ -7,7 +7,8 @@ from typing import Optional
 
 from scarches.models.trvae._utils import one_hot_encoder
 from scarches.models.trvae.losses import mse, zinb, nb
-from lataq.trainers._utils import euclidean_dist
+from lataq.trainers._utils import euclidean_dist, cov
+
 
 class EmbedCVAE(nn.Module):
     def __init__(
@@ -206,61 +207,74 @@ class EmbedCVAE(nn.Module):
 
         return z1, recon_loss, kl_div, mmd_loss
 
-    def add_new_cell_type(self, cell_type_name, landmarks):
+    def add_new_cell_type(self, latent, cell_type_name, landmarks, classes_list=None):
         """
         Function used to add new annotation for a novel cell type.
 
         Parameters
         ----------
+        latent: torch.Tensor
+            Latent representation of adata.
         cell_type_name: str
             Name of the new cell type
         landmarks: list
             List of indices of the unlabeled landmarks that correspond to the new cell type
+        classes_list: torch.Tensor
+            Tensor of landmark indices corresponding to current hierarchy
 
         Returns
         -------
         """
+        # Update internal model parameters
         self.cell_types.append(cell_type_name)
         self.n_cell_types += 1
         self.cell_type_encoder = {k: v for k, v in zip(self.cell_types, range(len(self.cell_types)))}
+
+        # Add new celltype index to hierarchy index list of landmarks
+        classes_list = torch.cat(
+            (
+                classes_list,
+                torch.tensor([self.n_cell_types - 1], device=classes_list.device)
+            ))
+
+        # Add new landmark mean to labeled landmark means
         new_landmark = self.landmarks_unlabeled["mean"][landmarks].mean(0).unsqueeze(0)
-
-        #TODO: CALCULATE COV WITH CLUSTER CORRESPONDING CELLS INSTEAD OF SETTING TO ZERO
-        new_landmark_cov = torch.zeros(
-            1, self.latent_dim, self.latent_dim,
-            device=self.landmarks_labeled["cov"].device, requires_grad=False
-        )
-
         self.landmarks_labeled["mean"] = torch.cat(
             (self.landmarks_labeled["mean"], new_landmark),
             dim=0
         )
+
+        # Get latent indices which correspond to new landmark
+        latent = latent.to(self.landmarks_labeled["mean"].device)
+        dists = euclidean_dist(latent, self.landmarks_labeled["mean"][classes_list, :])
+        min_dist, y_hat = torch.min(dists, 1)
+        y_hat = classes_list[y_hat]
+        indices = y_hat.eq(self.n_cell_types - 1).nonzero(as_tuple=False)[:, 0]
+
+        # Add new landmark cov to labeled landmark covs
+        new_landmark_cov = cov(latent[indices, :]).unsqueeze(0)
+        new_landmark_cov = new_landmark_cov.to(self.landmarks_labeled["cov"].device)
         self.landmarks_labeled["cov"] = torch.cat(
             (self.landmarks_labeled["cov"], new_landmark_cov),
             dim=0
         )
-
 
     def classify(self, x, c=None, landmark=False, classes_list=None, metric="dist"):
         """
             Classifies unlabeled cells using the landmarks obtained during training.
             Data handling before call to model's classify method.
 
-            x:  np.ndarray
-                Features to be classified. If None the stored 
-                model's adata is used.
-            c: np.ndarray
+            x: torch.Tensor
+                Features to be classified. If None the stored model's adata is used.
+            c: torch.Tensor
                 Condition vector.
-            landmark:
+            landmark: Boolean
                 Boolean whether to classify the gene features or landmarks stored
                 stored in the model.
-            metric:
+            classes_list: torch.Tensor
+                Tensor of landmark indices corresponding to current hierarchy
+            metric: Str
                 Method to use for classification. Can be dist, gaussian, hyperbolic
-            threshold:
-                Threshold to use on the class probabilities to detect novel cell types,
-                or mark unknown cells.
-
-
         """
         if landmark:
             latent = x

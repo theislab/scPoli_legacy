@@ -360,7 +360,6 @@ class LATAQtrainer(Trainer):
                 update_loss, args_count = self.landmark_unlabeled_loss(
                     latent,
                     torch.stack(self.landmarks_unlabeled).squeeze(),
-                    update_pos=True,
                 )
                 update_loss.backward()
                 self.landmark_optim.step()
@@ -514,7 +513,7 @@ class LATAQtrainer(Trainer):
 
         return loss
 
-    def landmark_unlabeled_loss(self, latent, landmarks, update_pos=False):
+    def landmark_unlabeled_loss(self, latent, landmarks):
         """
         Compute the unlabeled landmark loss. Different losses are included.
 
@@ -524,8 +523,6 @@ class LATAQtrainer(Trainer):
                 Latent representation of labeled batch
             landmarks: Tensor
                 Tensor containing the means of the landmarks
-            labels: Tensor
-                Tensor containing cell type information of the batch
         """
         dists = euclidean_dist(latent, landmarks)
         min_dist, y_hat = torch.min(dists, 1)

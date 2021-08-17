@@ -333,7 +333,14 @@ class LATAQ(BaseMixin):
 
         return results
 
-    def add_new_cell_type(self, cell_type_name, obs_key, landmarks):
+    def add_new_cell_type(
+            self,
+            cell_type_name,
+            obs_key,
+            landmarks,
+            x=None,
+            c=None,
+    ):
         """
         Function used to add new annotation for a novel cell type.
 
@@ -341,14 +348,61 @@ class LATAQ(BaseMixin):
         ----------
         cell_type_name: str
             Name of the new cell type
+        obs_key: str
+            Obs column key to define the hierarchy level of celltype annotation.
         landmarks: list
             List of indices of the unlabeled landmarks that correspond to the new cell type
+        x:  np.ndarray
+            Features to be classified. If None the stored
+            model's adata is used.
+        c: np.ndarray
+            Condition vector. If None the stored
+            model's condition vector is used.
 
         Returns
         -------
 
         """
-        self.model.add_new_cell_type(cell_type_name, landmarks)
+        # Get latent of model data or input data
+        device = next(self.model.parameters()).device
+        if x is None and c is None:
+            x = self.adata.X
+            if self.conditions_ is not None:
+                c = self.adata.obs[self.condition_key_]
+        if c is not None:
+            c = np.asarray(c)
+            if not set(c).issubset(self.conditions_):
+                raise ValueError("Incorrect conditions")
+            labels = np.zeros(c.shape[0])
+            for condition, label in self.model.condition_encoder.items():
+                labels[c == condition] = label
+            c = torch.tensor(labels, device='cpu')
+        x = torch.tensor(x, device='cpu')
+        latents = []
+        indices = torch.arange(x.size(0), device='cpu')
+        subsampled_indices = indices.split(512)
+        for batch in subsampled_indices:
+            latent = self.model.get_latent(x[batch, :].to(device), c[batch].to(device), False)
+            latents += [latent.cpu().detach()]
+        latents = torch.cat(latents)
+
+        # get indices of different landmarks corresponding to current hierarchy
+        landmarks_idx = list()
+        for i, key in enumerate(self.cell_types_.keys()):
+            if obs_key in self.cell_types_[key]:
+                landmarks_idx.append(i)
+
+        landmarks_idx = torch.tensor(landmarks_idx, device=device)
+
+        # Calculate mean and Cov of new landmark
+        self.model.add_new_cell_type(
+            latents,
+            cell_type_name,
+            landmarks,
+            landmarks_idx,
+        )
+
+        # Update parameters
         self.landmarks_labeled_ = self.model.landmarks_labeled
         self.landmarks_unlabeled_ = self.model.landmarks_unlabeled
         self.cell_types_[cell_type_name] = [obs_key]
