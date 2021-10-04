@@ -1,5 +1,6 @@
 datasets/
 data/
+tests/tmp/
 tranvae_benchmarks/
 seurat_benchmarks/
 *.egg-info/

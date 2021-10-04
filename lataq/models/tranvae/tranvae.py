@@ -93,6 +93,7 @@ class tranVAE(trVAE):
 
         # Add new landmark cov to labeled landmark covs
         new_landmark_cov = cov(latent[indices, :]).unsqueeze(0)
+        #new_landmark_cov = np.cov(latent[indices, :].detach().cpu().numpy(), bias=True)
         new_landmark_cov = new_landmark_cov.to(self.landmarks_labeled["cov"].device)
         self.landmarks_labeled["cov"] = torch.cat(
             (self.landmarks_labeled["cov"], new_landmark_cov),
