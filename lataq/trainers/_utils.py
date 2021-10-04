@@ -1,6 +1,5 @@
 import torch
 
-
 def cov(x, rowvar=False, bias=False, ddof=None, aweights=None):
     """Estimates covariance matrix like numpy.cov"""
     # ensure at least 2D
