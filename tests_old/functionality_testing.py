@@ -1,7 +1,7 @@
-import torch
 import numpy as np
+import torch
 import torch.nn.functional as F
-from torch.distributions import MultivariateNormal, LowRankMultivariateNormal
+from torch.distributions import LowRankMultivariateNormal, MultivariateNormal
 
 # Check 0 determinant behavior#
 size = 20

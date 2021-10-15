@@ -1,8 +1,9 @@
+import os
+
+import matplotlib.pyplot as plt
 import scanpy as sc
 import torch
-import os
 from scarches.dataset.trvae.data_handling import remove_sparsity
-import matplotlib.pyplot as plt
 from tranvae.model import TRANVAE
 
 sc.settings.set_figure_params(dpi=200, frameon=False)

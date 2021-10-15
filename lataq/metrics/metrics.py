@@ -1,16 +1,18 @@
-import pandas as pd
-import numpy as np
-import scanpy as sc
-from scipy import sparse
-from scipy.stats import itemfreq, entropy
-from scipy.sparse.csgraph import connected_components
-import sklearn
-import sklearn.metrics
-from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import LabelEncoder
 import subprocess
 import tempfile
-from os import mkdir, path, remove, stat
+from os import remove
+
+import numpy as np
+import pandas as pd
+import scanpy as sc
+import sklearn
+import sklearn.metrics
+from scipy import sparse
+from scipy.sparse.csgraph import connected_components
+from scipy.stats import entropy, itemfreq
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import LabelEncoder
+
 
 # Define Errors
 class RootCellError(Exception):
@@ -340,9 +342,9 @@ def write_tmp_labels(group_assignments, to_int=False, delim="\n"):
         for label in set(group_assignments):
             label_map[label] = i
             i += 1
-        labels = delim.join([str(label_map[name]) for name in group_assignments])
+        delim.join([str(label_map[name]) for name in group_assignments])
     else:
-        labels = delim.join([str(name) for name in group_assignments])
+        delim.join([str(name) for name in group_assignments])
 
     clusters = {label: [] for label in set(group_assignments)}
     for i, label in enumerate(group_assignments):

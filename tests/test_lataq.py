@@ -1,13 +1,11 @@
-import pytest
-
-import scanpy as sc
 import pandas as pd
-from sklearn.metrics import classification_report
+import pytest
+import scanpy as sc
+from lataq_reproduce.exp_dict import EXPERIMENT_INFO
 from scarches.dataset.trvae.data_handling import remove_sparsity
+from sklearn.metrics import classification_report
 
 from lataq.models import EMBEDCVAE, TRANVAE
-from lataq_reproduce.utils import label_encoder
-from lataq_reproduce.exp_dict import EXPERIMENT_INFO
 
 
 @pytest.fixture
@@ -104,7 +102,7 @@ def test_fatal(fixed_params, model, loss_metric):
     )
     for i in range(len(cell_type_key)):
         preds = results_dict[cell_type_key[i]]["preds"]
-        probs = results_dict[cell_type_key[i]]["probs"]
+        results_dict[cell_type_key[i]]["probs"]
         classification_df = pd.DataFrame(
             classification_report(
                 y_true=adata.obs[cell_type_key[i]], y_pred=preds, output_dict=True

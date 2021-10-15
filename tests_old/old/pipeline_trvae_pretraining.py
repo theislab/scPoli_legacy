@@ -1,10 +1,10 @@
-import scanpy as sc
-import torch
 import os
-import scarches as sca
-from scarches.dataset.trvae.data_handling import remove_sparsity
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
+import scanpy as sc
+import scarches as sca
+import torch
+from scarches.dataset.trvae.data_handling import remove_sparsity
 
 sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)

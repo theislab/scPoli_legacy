@@ -1,6 +1,6 @@
-from anndata import AnnData
 from typing import Optional, Union
 
+from anndata import AnnData
 from scarches.models.base._utils import _validate_var_names
 
 from .. import LATAQ

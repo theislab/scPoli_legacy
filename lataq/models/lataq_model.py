@@ -1,12 +1,9 @@
-import torch
+from typing import Optional
+
 import numpy as np
 import scanpy as sc
-
+import torch
 from anndata import AnnData
-from typing import Optional, Union
-import torch.nn.functional as F
-
-from scarches.models.base._utils import _validate_var_names
 from scarches.models.base._base import BaseMixin
 
 from lataq.trainers import LATAQtrainer

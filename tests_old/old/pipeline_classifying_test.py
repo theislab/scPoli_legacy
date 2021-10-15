@@ -1,11 +1,12 @@
-import scanpy as sc
-import torch
 import os
-from tranvae.model import TRANVAE
-from scarches.dataset.trvae.data_handling import remove_sparsity
+
 import matplotlib.pyplot as plt
 import numpy as np
+import scanpy as sc
+import torch
+from scarches.dataset.trvae.data_handling import remove_sparsity
 from sklearn.metrics import classification_report
+from tranvae.model import TRANVAE
 
 
 def set_axis_style(ax, labels):

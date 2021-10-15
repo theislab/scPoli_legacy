@@ -1,14 +1,13 @@
-import torch
-from torch.distributions import Normal, kl_divergence, MultivariateNormal
-import torch.nn.functional as F
 from typing import Optional
-import numpy as np
 
-from scarches.models.trvae.trvae import trVAE
-from scarches.models.trvae.losses import mse, mmd, zinb, nb
+import torch
+import torch.nn.functional as F
 from scarches.models.trvae._utils import one_hot_encoder
+from scarches.models.trvae.losses import mmd, mse, nb, zinb
+from scarches.models.trvae.trvae import trVAE
+from torch.distributions import MultivariateNormal, Normal, kl_divergence
 
-from lataq.trainers._utils import euclidean_dist, cov
+from lataq.trainers._utils import cov, euclidean_dist
 
 
 class tranVAE(trVAE):

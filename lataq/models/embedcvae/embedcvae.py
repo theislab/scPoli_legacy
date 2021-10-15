@@ -1,13 +1,12 @@
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from torch.distributions import Normal, kl_divergence, MultivariateNormal
-from typing import Optional
-
 from scarches.models.trvae._utils import one_hot_encoder
-from scarches.models.trvae.losses import mse, zinb, nb
-from lataq.trainers._utils import euclidean_dist, cov
+from scarches.models.trvae.losses import mse, nb, zinb
+from torch.distributions import MultivariateNormal, Normal, kl_divergence
+
+from lataq.trainers._utils import cov, euclidean_dist
 
 
 class EmbedCVAE(nn.Module):

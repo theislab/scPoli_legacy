@@ -1,15 +1,14 @@
-from typing import Optional
-import torch
-from torch.nn import NLLLoss
-import torch.nn.functional as F
-import scanpy as sc
-import pandas as pd
-import numpy as np
-from sklearn.cluster import KMeans
-from scarches.trainers.trvae.trainer import Trainer
-from scarches.trainers.trvae._utils import make_dataset
 
-from ._utils import euclidean_dist, t_dist, target_distribution, kl_loss, cov
+import numpy as np
+import pandas as pd
+import scanpy as sc
+import torch
+import torch.nn.functional as F
+from scarches.trainers.trvae._utils import make_dataset
+from scarches.trainers.trvae.trainer import Trainer
+from sklearn.cluster import KMeans
+
+from ._utils import cov, euclidean_dist, kl_loss, t_dist, target_distribution
 
 
 class LATAQtrainer(Trainer):
