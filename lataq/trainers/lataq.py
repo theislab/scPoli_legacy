@@ -1,15 +1,14 @@
-from typing import Optional
-import torch
-from torch.nn import NLLLoss
-import torch.nn.functional as F
-import scanpy as sc
-import pandas as pd
-import numpy as np
-from sklearn.cluster import KMeans
-from scarches.trainers.trvae.trainer import Trainer
-from scarches.trainers.trvae._utils import make_dataset
 
-from ._utils import euclidean_dist, t_dist, target_distribution, kl_loss, cov
+import numpy as np
+import pandas as pd
+import scanpy as sc
+import torch
+import torch.nn.functional as F
+from scarches.trainers.trvae._utils import make_dataset
+from scarches.trainers.trvae.trainer import Trainer
+from sklearn.cluster import KMeans
+
+from ._utils import cov, euclidean_dist, kl_loss, t_dist, target_distribution
 
 
 class LATAQtrainer(Trainer):
@@ -78,21 +77,22 @@ class LATAQtrainer(Trainer):
     seed: Integer
         Define a specific random seed to get reproducable results.
     """
+
     def __init__(
-            self,
-            model,
-            adata,
-            labeled_indices: list = None,
-            pretraining_epochs: int = 0,
-            clustering: str = "leiden",
-            clustering_res: float = 1,
-            n_clusters: int = None,
-            loss_metric: str = "dist",
-            unlabeled_weight: float = 0.001,
-            overconfidence_scale: int = None,
-            hyperbolic_log1p: bool = False,
-            eta: float = 1,
-            **kwargs
+        self,
+        model,
+        adata,
+        labeled_indices: list = None,
+        pretraining_epochs: int = 0,
+        clustering: str = "leiden",
+        clustering_res: float = 1,
+        n_clusters: int = None,
+        loss_metric: str = "dist",
+        unlabeled_weight: float = 0.001,
+        overconfidence_scale: int = None,
+        hyperbolic_log1p: bool = False,
+        eta: float = 1,
+        **kwargs,
     ):
 
         super().__init__(model, adata, **kwargs)
@@ -116,13 +116,13 @@ class LATAQtrainer(Trainer):
         self.pretraining_epochs = pretraining_epochs
         self.use_early_stopping_orig = self.use_early_stopping
 
-        self.landmarks_labeled = None            #landmarks labeled cells (means)
-        self.landmarks_labeled_cov = None        #landmarks labeled cells (cov)
-        self.landmarks_unlabeled = None          #landmarks all cells (means)
-        self.best_landmarks_labeled = None       #cache for ES, to use best state    
-        self.best_landmarks_labeled_cov = None   #cache for ES
-        self.best_landmarks_unlabeled = None     #cache for ES
-        self.landmark_optim = None               #landmark optimizer
+        self.landmarks_labeled = None  # landmarks labeled cells (means)
+        self.landmarks_labeled_cov = None  # landmarks labeled cells (cov)
+        self.landmarks_unlabeled = None  # landmarks all cells (means)
+        self.best_landmarks_labeled = None  # cache for ES, to use best state
+        self.best_landmarks_labeled_cov = None  # cache for ES
+        self.best_landmarks_unlabeled = None  # cache for ES
+        self.landmark_optim = None  # landmark optimizer
         # Set indices for labeled data
         if labeled_indices is None:
             self.labeled_indices = range(len(adata))
@@ -136,16 +136,18 @@ class LATAQtrainer(Trainer):
             self.landmarks_labeled_cov = self.model.landmarks_labeled["cov"]
         if self.landmarks_labeled is not None:
             self.landmarks_labeled = self.landmarks_labeled.to(device=self.device)
-            self.landmarks_labeled_cov = self.landmarks_labeled_cov.to(device=self.device)
+            self.landmarks_labeled_cov = self.landmarks_labeled_cov.to(
+                device=self.device
+            )
 
     def update_labeled_indices(self, labeled_indices):
         """
-            Function to generate a dataset with new labeled indices after init.
+        Function to generate a dataset with new labeled indices after init.
 
-            Parameters
-            ==========
-            labeled_indices: list
-                List of integer indices for labeled samples.
+        Parameters
+        ==========
+        labeled_indices: list
+            List of integer indices for labeled samples.
 
         """
         self.labeled_indices = labeled_indices
@@ -161,11 +163,11 @@ class LATAQtrainer(Trainer):
 
     def get_latent_train(self):
         """
-            Function to return the latent representation of the training dataset.
+        Function to return the latent representation of the training dataset.
 
-            Returns
-            =======
-            latent
+        Returns
+        =======
+        latent
         """
         latents = []
         indices = torch.arange(self.train_data.data.size(0), device=self.device)
@@ -173,7 +175,7 @@ class LATAQtrainer(Trainer):
         for batch in subsampled_indices:
             latent = self.model.get_latent(
                 self.train_data.data[batch, :].to(self.device),
-                self.train_data.conditions[batch].to(self.device)
+                self.train_data.conditions[batch].to(self.device),
             )
             latents += [latent.cpu().detach()]
         latent = torch.cat(latents)
@@ -181,26 +183,39 @@ class LATAQtrainer(Trainer):
 
     def initialize_landmarks(self):
         """
-        Function that initializes landmarks 
+        Function that initializes landmarks
         """
         # Compute Latent of whole train data
         latent = self.get_latent_train()
 
         # Init labeled Landmarks if labeled data existent
-        if 1 in self.train_data.labeled_vector.unique().tolist(): 
+        if 1 in self.train_data.labeled_vector.unique().tolist():
             labeled_latent = latent[self.train_data.labeled_vector == 1]
-            labeled_cell_types = self.train_data.cell_types[self.train_data.labeled_vector == 1, :]  #get cell type annot
-            if self.landmarks_labeled is not None: #checks if model already has initialized landmarks and then initialize new landmarks for new or unseen cell types in query
+            labeled_cell_types = self.train_data.cell_types[
+                self.train_data.labeled_vector == 1, :
+            ]  # get cell type annot
+            if (
+                self.landmarks_labeled is not None
+            ):  # checks if model already has initialized landmarks and then initialize new landmarks for new or unseen cell types in query
                 with torch.no_grad():
                     if len(self.model.new_landmarks) > 0:
                         for value in self.model.new_landmarks:
-                            indices = labeled_cell_types.eq(value).nonzero(as_tuple=False)[:, 0]
+                            indices = labeled_cell_types.eq(value).nonzero(
+                                as_tuple=False
+                            )[:, 0]
                             landmark = labeled_latent[indices].mean(0)
                             landmark_cov = cov(labeled_latent[indices]).unsqueeze(0)
-                            self.landmarks_labeled = torch.cat([self.landmarks_labeled, landmark])
-                            self.landmarks_labeled_cov = torch.cat([self.landmarks_labeled_cov, landmark_cov])
-            else: #compute labeled landmarks
-                self.landmarks_labeled, self.landmarks_labeled_cov = self.update_labeled_landmarks(
+                            self.landmarks_labeled = torch.cat(
+                                [self.landmarks_labeled, landmark]
+                            )
+                            self.landmarks_labeled_cov = torch.cat(
+                                [self.landmarks_labeled_cov, landmark_cov]
+                            )
+            else:  # compute labeled landmarks
+                (
+                    self.landmarks_labeled,
+                    self.landmarks_labeled_cov,
+                ) = self.update_labeled_landmarks(
                     latent[self.train_data.labeled_vector == 1],
                     self.train_data.cell_types[self.train_data.labeled_vector == 1, :],
                     None,
@@ -209,45 +224,59 @@ class LATAQtrainer(Trainer):
 
         # Init unlabeled Landmarks if unlabeled data existent
         # Unknown ct names: list of strings that identify cells to ignore during training
-        if 0 in self.train_data.labeled_vector.unique().tolist() or self.model.unknown_ct_names is not None:
+        if (
+            0 in self.train_data.labeled_vector.unique().tolist()
+            or self.model.unknown_ct_names is not None
+        ):
             lat_array = latent.cpu().detach().numpy()
 
             if self.clustering == "kmeans" and self.n_clusters is not None:
-                print(f"\nInitializing unlabeled landmarks with KMeans-Clustering with a given number of"
-                      f"{self.n_clusters} clusters.")
+                print(
+                    f"\nInitializing unlabeled landmarks with KMeans-Clustering with a given number of"
+                    f"{self.n_clusters} clusters."
+                )
                 k_means = KMeans(n_clusters=self.n_clusters).fit(lat_array)
-                k_means_landmarks = torch.tensor(k_means.cluster_centers_, device=self.device)
+                k_means_landmarks = torch.tensor(
+                    k_means.cluster_centers_, device=self.device
+                )
 
                 self.landmarks_unlabeled = [
                     torch.zeros(
                         size=(1, self.model.latent_dim),
                         requires_grad=False,
-                        device=self.device)
+                        device=self.device,
+                    )
                     for _ in range(self.n_clusters)
-                ] #initialize tensor with zeros
+                ]  # initialize tensor with zeros
 
                 with torch.no_grad():
-                    [self.landmarks_unlabeled[i].copy_(k_means_landmarks[i, :]) for i in range(k_means_landmarks.shape[0])]
-                    #replace zeros with the kmeans centroids
+                    [
+                        self.landmarks_unlabeled[i].copy_(k_means_landmarks[i, :])
+                        for i in range(k_means_landmarks.shape[0])
+                    ]
+                    # replace zeros with the kmeans centroids
             else:
                 if self.clustering == "kmeans" and self.n_clusters is None:
-                    print(f"\nInitializing unlabeled landmarks with Leiden-Clustering because no value for the"
-                          f"number of clusters was given.")
+                    print(
+                        f"\nInitializing unlabeled landmarks with Leiden-Clustering because no value for the"
+                        f"number of clusters was given."
+                    )
                 else:
-                    print(f"\nInitializing unlabeled landmarks with Leiden-Clustering with an unknown number of "
-                          f"clusters.")
+                    print(
+                        f"\nInitializing unlabeled landmarks with Leiden-Clustering with an unknown number of "
+                        f"clusters."
+                    )
                 lat_adata = sc.AnnData(lat_array)
                 sc.pp.neighbors(lat_adata)
                 sc.tl.leiden(lat_adata, resolution=self.clustering_res)
 
                 features = pd.DataFrame(
-                    lat_adata.X, 
-                    index=np.arange(0, lat_adata.shape[0])
+                    lat_adata.X, index=np.arange(0, lat_adata.shape[0])
                 )
                 group = pd.Series(
-                    np.asarray(lat_adata.obs["leiden"],dtype=int),
+                    np.asarray(lat_adata.obs["leiden"], dtype=int),
                     index=np.arange(0, lat_adata.shape[0]),
-                    name="cluster"
+                    name="cluster",
                 )
                 merged_df = pd.concat([features, group], axis=1)
                 cluster_centers = np.asarray(merged_df.groupby("cluster").mean())
@@ -260,25 +289,32 @@ class LATAQtrainer(Trainer):
                     torch.zeros(
                         size=(1, self.model.latent_dim),
                         requires_grad=False,
-                        device=self.device)
+                        device=self.device,
+                    )
                     for _ in range(self.n_clusters)
                 ]
 
                 with torch.no_grad():
-                    [self.landmarks_unlabeled[i].copy_(leiden_landmarks[i, :]) for i in range(leiden_landmarks.shape[0])]
+                    [
+                        self.landmarks_unlabeled[i].copy_(leiden_landmarks[i, :])
+                        for i in range(leiden_landmarks.shape[0])
+                    ]
 
     def on_epoch_begin(self, lr, eps):
         """
-            Routine that happens at the beginning of every epoch. Model update step.
+        Routine that happens at the beginning of every epoch. Model update step.
         """
         if self.epoch == self.pretraining_epochs:
             self.initialize_landmarks()
-            if 0 in self.train_data.labeled_vector.unique().tolist() or self.model.unknown_ct_names is not None:
+            if (
+                0 in self.train_data.labeled_vector.unique().tolist()
+                or self.model.unknown_ct_names is not None
+            ):
                 self.landmark_optim = torch.optim.Adam(
                     params=self.landmarks_unlabeled,
                     lr=lr,
                     eps=eps,
-                    weight_decay=self.weight_decay
+                    weight_decay=self.weight_decay,
                 )
         if self.epoch < self.pretraining_epochs:
             self.use_early_stopping = False
@@ -304,7 +340,9 @@ class LATAQtrainer(Trainer):
                     latent,
                     torch.stack(self.landmarks_unlabeled).squeeze(),
                 )
-                unweighted_landmark_loss = unweighted_landmark_loss + self.unlabeled_weight * unlabeled_loss
+                unweighted_landmark_loss = (
+                    unweighted_landmark_loss + self.unlabeled_weight * unlabeled_loss
+                )
 
             # Calculate landmark loss for labeled data
             if 1 in label_categories:
@@ -321,7 +359,10 @@ class LATAQtrainer(Trainer):
         loss = trvae_loss + landmark_loss
         self.iter_logs["loss"].append(loss.item())
         self.iter_logs["unweighted_loss"].append(
-            recon_loss.item() + kl_loss.item() + mmd_loss.item() + unweighted_landmark_loss.item()
+            recon_loss.item()
+            + kl_loss.item()
+            + mmd_loss.item()
+            + unweighted_landmark_loss.item()
         )
         self.iter_logs["trvae_loss"].append(trvae_loss.item())
         if self.epoch >= self.pretraining_epochs:
@@ -344,12 +385,15 @@ class LATAQtrainer(Trainer):
 
             # Update labeled landmark positions
             if 1 in label_categories:
-                self.landmarks_labeled, self.landmarks_labeled_cov = self.update_labeled_landmarks(
+                (
+                    self.landmarks_labeled,
+                    self.landmarks_labeled_cov,
+                ) = self.update_labeled_landmarks(
                     latent[self.train_data.labeled_vector == 1],
                     self.train_data.cell_types[self.train_data.labeled_vector == 1, :],
                     self.landmarks_labeled,
                     self.landmarks_labeled_cov,
-                    self.model.new_landmarks
+                    self.model.new_landmarks,
                 )
 
             # Update unlabeled landmark positions
@@ -371,7 +415,7 @@ class LATAQtrainer(Trainer):
 
     def after_loop(self):
         """
-            Routine at the end of training. Load best state.
+        Routine at the end of training. Load best state.
         """
         if self.best_state_dict is not None and self.reload_best:
             self.landmarks_labeled = self.best_landmarks_labeled
@@ -381,32 +425,32 @@ class LATAQtrainer(Trainer):
         self.model.landmarks_labeled["mean"] = self.landmarks_labeled
         self.model.landmarks_labeled["cov"] = self.landmarks_labeled_cov
 
-        if 0 in self.train_data.labeled_vector.unique().tolist() or self.model.unknown_ct_names is not None:
-            self.model.landmarks_unlabeled["mean"] = torch.stack(self.landmarks_unlabeled).squeeze()
+        if (
+            0 in self.train_data.labeled_vector.unique().tolist()
+            or self.model.unknown_ct_names is not None
+        ):
+            self.model.landmarks_unlabeled["mean"] = torch.stack(
+                self.landmarks_unlabeled
+            ).squeeze()
         else:
             self.model.landmarks_unlabeled["mean"] = self.landmarks_unlabeled
 
     def update_labeled_landmarks(
-        self, 
-        latent, 
-        labels, 
-        previous_landmarks, 
-        previous_landmarks_cov, 
-        mask=None
+        self, latent, labels, previous_landmarks, previous_landmarks_cov, mask=None
     ):
         """
-            Function that updates labeled landmarks.
+        Function that updates labeled landmarks.
 
-            Parameters
-            ==========
-            latent: Tensor
-                Latent representation of labeled batch
-            labels: Tensor
-                Tensor containing cell type information of the batch
-            previous_landmarks: Tensor
-                Tensor containing the means of the landmarks before update
-            previous_landmarks_cov: Tensor
-                Tensor containing the covariance matrices of the landmarks before udpate.
+        Parameters
+        ==========
+        latent: Tensor
+            Latent representation of labeled batch
+        labels: Tensor
+            Tensor containing cell type information of the batch
+        previous_landmarks: Tensor
+            Tensor containing the means of the landmarks before update
+        previous_landmarks_cov: Tensor
+            Tensor containing the covariance matrices of the landmarks before udpate.
 
         """
         with torch.no_grad():
@@ -414,35 +458,49 @@ class LATAQtrainer(Trainer):
             landmarks_mean = None
             landmarks_cov = None
             for value in range(self.model.n_cell_types):
-                if (mask is None or value in mask) and value in unique_labels:  #update the landmark included in mask if there is one
+                if (
+                    mask is None or value in mask
+                ) and value in unique_labels:  # update the landmark included in mask if there is one
                     indices = labels.eq(value).nonzero(as_tuple=False)[:, 0]
                     landmark = latent[indices, :].mean(0).unsqueeze(0)
                     landmark_cov = cov(latent[indices, :]).unsqueeze(0)
-                    landmarks_mean = torch.cat(
-                        [landmarks_mean, landmark]) if landmarks_mean is not None else landmark
-                    landmarks_cov = torch.cat(
-                        [landmarks_cov, landmark_cov]) if landmarks_cov is not None else landmark_cov
-                else:                                                           #do not update the landmarks (e.g. during surgery landmarks are fixed)
+                    landmarks_mean = (
+                        torch.cat([landmarks_mean, landmark])
+                        if landmarks_mean is not None
+                        else landmark
+                    )
+                    landmarks_cov = (
+                        torch.cat([landmarks_cov, landmark_cov])
+                        if landmarks_cov is not None
+                        else landmark_cov
+                    )
+                else:  # do not update the landmarks (e.g. during surgery landmarks are fixed)
                     landmark = previous_landmarks[value].unsqueeze(0)
                     landmark_cov = previous_landmarks_cov[value].unsqueeze(0)
-                    landmarks_mean = torch.cat(
-                        [landmarks_mean, landmark]) if landmarks_mean is not None else landmark
-                    landmarks_cov = torch.cat(
-                        [landmarks_cov, landmark_cov]) if landmarks_cov is not None else landmark_cov
+                    landmarks_mean = (
+                        torch.cat([landmarks_mean, landmark])
+                        if landmarks_mean is not None
+                        else landmark
+                    )
+                    landmarks_cov = (
+                        torch.cat([landmarks_cov, landmark_cov])
+                        if landmarks_cov is not None
+                        else landmark_cov
+                    )
         return landmarks_mean, landmarks_cov
 
     def landmark_labeled_loss(self, latent, landmarks, labels):
         """
-            Compute the labeled landmark loss. Different losses are included.
+        Compute the labeled landmark loss. Different losses are included.
 
-            Parameters
-            ==========
-            latent: Tensor
-                Latent representation of labeled batch
-            landmarks: Tensor
-                Tensor containing the means of the landmarks
-            labels: Tensor
-                Tensor containing cell type information of the batch
+        Parameters
+        ==========
+        latent: Tensor
+            Latent representation of labeled batch
+        landmarks: Tensor
+            Tensor containing the means of the landmarks
+        labels: Tensor
+            Tensor containing cell type information of the batch
         """
         unique_labels = torch.unique(labels, sorted=True)
         distances = euclidean_dist(latent, landmarks)
@@ -454,10 +512,10 @@ class LATAQtrainer(Trainer):
 
         if self.loss_metric == "dist":
             # Basic euclidean distance loss
-            for value in unique_labels: 
+            for value in unique_labels:
                 if value == -1:
                     continue
-                indices = labels.eq(value).nonzero(as_tuple=False)[:,0]
+                indices = labels.eq(value).nonzero(as_tuple=False)[:, 0]
                 label_loss = distances[indices, value].sum(0) / len(indices)
                 loss += label_loss
 
@@ -467,8 +525,13 @@ class LATAQtrainer(Trainer):
 
             # Transform latent to hyperbolic space and filter out cells with label == -1 which correspond to "unknown"
             transformation_m = (
-                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1)
-            ).unsqueeze(dim=1).expand(-1, latent.size(1))
+                (
+                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2)
+                    / torch.norm(latent, p=2, dim=1)
+                )
+                .unsqueeze(dim=1)
+                .expand(-1, latent.size(1))
+            )
             h_latent = transformation_m * latent
             h_latent = h_latent[labels.squeeze(1) != -1, :]
 
@@ -478,7 +541,9 @@ class LATAQtrainer(Trainer):
 
             # Buseman loss
             b_loss = torch.log(
-                self.log1p_scale + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
+                self.log1p_scale
+                + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2
+                / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
             )
 
             # Overconfidence penalty loss
@@ -492,14 +557,19 @@ class LATAQtrainer(Trainer):
             assert False, "This loss may not work at current state"
             id = torch.eye(len(landmarks), device=self.device)
             truth_id = id[labels]
-            quantiles_view = self.landmarks_labeled_cov.unsqueeze(0).expand(distances.size(0), distances.size(1))
-            overlap = torch.max(torch.zeros_like(distances), (quantiles_view - distances) / quantiles_view)
+            quantiles_view = self.landmarks_labeled_cov.unsqueeze(0).expand(
+                distances.size(0), distances.size(1)
+            )
+            overlap = torch.max(
+                torch.zeros_like(distances),
+                (quantiles_view - distances) / quantiles_view,
+            )
             loss = torch.pow(truth_id - overlap, 2).sum(1).mean(0)
 
         elif self.loss_metric == "seurat":
             # Idea of using seurat distances for loss
             # See https://www.cell.com/cell/pdf/S0092-8674(19)30559-8.pdf
-            #assert False, "This loss may not work at current state"
+            # assert False, "This loss may not work at current state"
             dists_t = 1 - (distances.T / distances.max(1)[0]).T
             prob = 1 - torch.exp(-dists_t / 4)
             prob = (prob.T / prob.sum(1)).T
@@ -508,8 +578,10 @@ class LATAQtrainer(Trainer):
             loss = torch.pow(truth_id - prob, 2).sum(1).mean(0)
 
         else:
-            assert False, f"'{self.loss_metric}' is not available as a loss function please choose " \
-                          f"between 'dist','t' or 'seurat'!"
+            assert False, (
+                f"'{self.loss_metric}' is not available as a loss function please choose "
+                f"between 'dist','t' or 'seurat'!"
+            )
 
         return loss
 
@@ -531,7 +603,9 @@ class LATAQtrainer(Trainer):
 
         if self.loss_metric == "dist":
             # Basic euclidean distance loss
-            loss_val = torch.stack([min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]).mean()
+            loss_val = torch.stack(
+                [min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]
+            ).mean()
 
         elif self.loss_metric == "hyperbolic":
             # Transform Landmarks to hyperbolic ideal points
@@ -539,8 +613,13 @@ class LATAQtrainer(Trainer):
 
             # Transform latent to hyperbolic space
             transformation_m = (
-                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2) / torch.norm(latent, p=2, dim=1)
-            ).unsqueeze(dim=1).expand(-1, latent.size(1))
+                (
+                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2)
+                    / torch.norm(latent, p=2, dim=1)
+                )
+                .unsqueeze(dim=1)
+                .expand(-1, latent.size(1))
+            )
             h_latent = transformation_m * latent
 
             # Get tensor of closest landmarks in Euclidean space
@@ -548,7 +627,9 @@ class LATAQtrainer(Trainer):
 
             # Buseman loss
             b_loss = torch.log(
-                self.log1p_scale + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2 / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
+                self.log1p_scale
+                + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2
+                / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
             )
 
             # Overconfidence penalty loss
@@ -560,8 +641,14 @@ class LATAQtrainer(Trainer):
         elif self.loss_metric == "overlap":
             # Own idea of cell balls with center at landmark and radius of 95%-quantile
             assert False, "This loss may not work at current state"
-            quantiles_view = self.landmarks_unlabeled_q.unsqueeze(0).expand(dists.size(0), dists.size(1))
-            overlap = torch.nan_to_num(torch.max(torch.zeros_like(dists), (quantiles_view - dists) / quantiles_view))
+            quantiles_view = self.landmarks_unlabeled_q.unsqueeze(0).expand(
+                dists.size(0), dists.size(1)
+            )
+            overlap = torch.nan_to_num(
+                torch.max(
+                    torch.zeros_like(dists), (quantiles_view - dists) / quantiles_view
+                )
+            )
             id = torch.eye(len(landmarks), device=self.device)
             cross_entropy_dist = euclidean_dist(overlap, id)
             loss_val = cross_entropy_dist.min(1)[0].mean(0)
@@ -589,7 +676,9 @@ class LATAQtrainer(Trainer):
             loss_val = kl_loss(q, p)
 
         else:
-            assert False, f"'{self.loss_metric}' is not a available as a loss function please choose " \
-                          f"between 'dist','t' or 'seurat'!"
+            assert False, (
+                f"'{self.loss_metric}' is not a available as a loss function please choose "
+                f"between 'dist','t' or 'seurat'!"
+            )
 
         return loss_val, args_count

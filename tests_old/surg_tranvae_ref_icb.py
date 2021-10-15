@@ -1,45 +1,28 @@
 import argparse
 
-parser = argparse.ArgumentParser(description='TRANVAE testing')
-parser.add_argument(
-    '--experiment', 
-    type=str,
-    help='Dataset of test'
-)
-parser.add_argument(
-    '--testnr', 
-    type=int,
-    help='Number of test',
-    default=10
-)
+parser = argparse.ArgumentParser(description="TRANVAE testing")
+parser.add_argument("--experiment", type=str, help="Dataset of test")
+parser.add_argument("--testnr", type=int, help="Number of test", default=10)
+
+parser.add_argument("--data_dir", type=str, help="Number of test", default="../data")
 
 parser.add_argument(
-    '--data_dir', 
+    "--results_dir",
     type=str,
-    help='Number of test',
-    default='../data'
-)
-
-parser.add_argument(
-    '--results_dir', 
-    type=str,
-    help='Number of test',
-    default='../tranvae_benchmarks/batchwise/surg'
+    help="Number of test",
+    default="../tranvae_benchmarks/batchwise/surg",
 )
 
 args = parser.parse_args()
 print(args)
 
-import os
 import time
-import numpy as np
+
 import scanpy as sc
 import torch
-
-import matplotlib.pyplot as plt
 from scarches.dataset.trvae.data_handling import remove_sparsity
+
 from lataq.models import TRANVAE
-from sklearn.metrics import classification_report
 
 sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
@@ -79,111 +62,140 @@ cell_type_key = ["cell_type"]
 for experiment in experiments:
     for test_nr in test_nrs:
         if experiment == "pancreas":
-            adata = sc.read(f'{DATA_DIR}/benchmark_pancreas_shrinked.h5ad')
+            adata = sc.read(f"{DATA_DIR}/benchmark_pancreas_shrinked.h5ad")
             condition_key = "study"
             if test_nr == 1:
-                reference = ['Pancreas inDrop']
-                query = ['Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
+                reference = ["Pancreas inDrop"]
+                query = [
+                    "Pancreas SS2",
+                    "Pancreas CelSeq2",
+                    "Pancreas CelSeq",
+                    "Pancreas Fluidigm C1",
+                ]
             elif test_nr == 2:
-                reference = ['Pancreas inDrop', 'Pancreas SS2']
-                query = ['Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
+                reference = ["Pancreas inDrop", "Pancreas SS2"]
+                query = ["Pancreas CelSeq2", "Pancreas CelSeq", "Pancreas Fluidigm C1"]
             elif test_nr == 3:
-                reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2']
-                query = ['Pancreas CelSeq', 'Pancreas Fluidigm C1']
+                reference = ["Pancreas inDrop", "Pancreas SS2", "Pancreas CelSeq2"]
+                query = ["Pancreas CelSeq", "Pancreas Fluidigm C1"]
             elif test_nr == 4:
-                reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq']
-                query = ['Pancreas Fluidigm C1']
+                reference = [
+                    "Pancreas inDrop",
+                    "Pancreas SS2",
+                    "Pancreas CelSeq2",
+                    "Pancreas CelSeq",
+                ]
+                query = ["Pancreas Fluidigm C1"]
             elif test_nr == 5:
-                reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq',
-                             'Pancreas Fluidigm C1']
+                reference = [
+                    "Pancreas inDrop",
+                    "Pancreas SS2",
+                    "Pancreas CelSeq2",
+                    "Pancreas CelSeq",
+                    "Pancreas Fluidigm C1",
+                ]
                 query = []
             elif test_nr == 10:
-                reference = ["inDrop1", "inDrop2", "inDrop3", "inDrop4", "fluidigmc1", "smartseq2", "smarter"]
+                reference = [
+                    "inDrop1",
+                    "inDrop2",
+                    "inDrop3",
+                    "inDrop4",
+                    "fluidigmc1",
+                    "smartseq2",
+                    "smarter",
+                ]
                 query = ["celseq", "celseq2"]
         if experiment == "pbmc":
-            adata = sc.read(
-                f'{DATA_DIR}/benchmark_pbmc_shrinked.h5ad'
-                )
-            condition_key = 'condition'
-            if test_nr == 1:
-                reference = ['Oetjen']
-                query = ['10X', 'Sun', 'Freytag']
-            elif test_nr == 2:
-                reference = ['Oetjen', '10X']
-                query = ['Sun', 'Freytag']
-            elif test_nr == 3:
-                reference = ['Oetjen', '10X', 'Sun']
-                query = ['Freytag']
-            elif test_nr == 4:
-                reference = ['Oetjen', '10X', 'Sun', 'Freytag']
-                query = []
-            elif test_nr == 10:
-                reference = ['Oetjen', '10X', 'Sun']
-                query = ['Freytag']
-        if experiment == "brain":
-            adata = sc.read(
-                f'{DATA_DIR}/benchmark_brain_shrinked.h5ad')
-            condition_key = "study"
-            if test_nr == 1:
-                reference = ['Rosenberg']
-                query = ['Saunders', 'Zeisel', 'Tabula_muris']
-            elif test_nr == 2:
-                reference = ['Rosenberg', 'Saunders']
-                query = ['Zeisel', 'Tabula_muris']
-            elif test_nr == 3:
-                reference = ['Rosenberg', 'Saunders', 'Zeisel']
-                query = ['Tabula_muris']
-            elif test_nr == 4:
-                reference = ['Rosenberg', 'Saunders', 'Zeisel', 'Tabula_muris']
-                query = []
-            elif test_nr == 10:
-                reference = ['Rosenberg', 'Saunders']
-                query = ['Zeisel', 'Tabula_muris']
-        if experiment == "scvelo":
-            adata = sc.read(
-                f'{DATA_DIR}/benchmark_scvelo_shrinked.h5ad')
-            condition_key = "study"
-            if test_nr == 1:
-                reference = ['12.5']
-                query = ['13.5', '14.5', '15.5']
-            elif test_nr == 2:
-                reference = ['12.5', '13.5']
-                query = ['14.5', '15.5']
-            elif test_nr == 3:
-                reference = ['12.5', '13.5', '14.5']
-                query = ['15.5']
-            elif test_nr == 4:
-                reference = ['12.5', '13.5', '14.5', '15.5']
-                query = []
-            elif test_nr == 10:
-                reference = ['12.5', '13.5']
-                query = ['14.5', '15.5']
-        if experiment == "lung":
-            adata = sc.read(
-                f'{DATA_DIR}/benchmark_lung_shrinked.h5ad')
+            adata = sc.read(f"{DATA_DIR}/benchmark_pbmc_shrinked.h5ad")
             condition_key = "condition"
             if test_nr == 1:
-                reference = ['Dropseq_transplant', '10x_Biopsy']
-                query = ['10x_Transplant']
+                reference = ["Oetjen"]
+                query = ["10X", "Sun", "Freytag"]
+            elif test_nr == 2:
+                reference = ["Oetjen", "10X"]
+                query = ["Sun", "Freytag"]
+            elif test_nr == 3:
+                reference = ["Oetjen", "10X", "Sun"]
+                query = ["Freytag"]
+            elif test_nr == 4:
+                reference = ["Oetjen", "10X", "Sun", "Freytag"]
+                query = []
             elif test_nr == 10:
-                reference = ['Dropseq_transplant', '10x_Biopsy']
-                query = ['10x_Transplant']
+                reference = ["Oetjen", "10X", "Sun"]
+                query = ["Freytag"]
+        if experiment == "brain":
+            adata = sc.read(f"{DATA_DIR}/benchmark_brain_shrinked.h5ad")
+            condition_key = "study"
+            if test_nr == 1:
+                reference = ["Rosenberg"]
+                query = ["Saunders", "Zeisel", "Tabula_muris"]
+            elif test_nr == 2:
+                reference = ["Rosenberg", "Saunders"]
+                query = ["Zeisel", "Tabula_muris"]
+            elif test_nr == 3:
+                reference = ["Rosenberg", "Saunders", "Zeisel"]
+                query = ["Tabula_muris"]
+            elif test_nr == 4:
+                reference = ["Rosenberg", "Saunders", "Zeisel", "Tabula_muris"]
+                query = []
+            elif test_nr == 10:
+                reference = ["Rosenberg", "Saunders"]
+                query = ["Zeisel", "Tabula_muris"]
+        if experiment == "scvelo":
+            adata = sc.read(f"{DATA_DIR}/benchmark_scvelo_shrinked.h5ad")
+            condition_key = "study"
+            if test_nr == 1:
+                reference = ["12.5"]
+                query = ["13.5", "14.5", "15.5"]
+            elif test_nr == 2:
+                reference = ["12.5", "13.5"]
+                query = ["14.5", "15.5"]
+            elif test_nr == 3:
+                reference = ["12.5", "13.5", "14.5"]
+                query = ["15.5"]
+            elif test_nr == 4:
+                reference = ["12.5", "13.5", "14.5", "15.5"]
+                query = []
+            elif test_nr == 10:
+                reference = ["12.5", "13.5"]
+                query = ["14.5", "15.5"]
+        if experiment == "lung":
+            adata = sc.read(f"{DATA_DIR}/benchmark_lung_shrinked.h5ad")
+            condition_key = "condition"
+            if test_nr == 1:
+                reference = ["Dropseq_transplant", "10x_Biopsy"]
+                query = ["10x_Transplant"]
+            elif test_nr == 10:
+                reference = ["Dropseq_transplant", "10x_Biopsy"]
+                query = ["10x_Transplant"]
         if experiment == "tumor":
-            adata = sc.read(
-                f'{DATA_DIR}/benchmark_tumor_shrinked.h5ad')
+            adata = sc.read(f"{DATA_DIR}/benchmark_tumor_shrinked.h5ad")
             condition_key = "study"
             if test_nr == 10:
-                reference = ['breast', 'colorectal', 'liver2', 'liver1', 'lung1', 'lung2', 'multiple', 'ovary',
-                             'pancreas', 'skin']
-                query = ['melanoma1', 'melanoma2', 'uveal melanoma']
+                reference = [
+                    "breast",
+                    "colorectal",
+                    "liver2",
+                    "liver1",
+                    "lung1",
+                    "lung2",
+                    "multiple",
+                    "ovary",
+                    "pancreas",
+                    "skin",
+                ]
+                query = ["melanoma1", "melanoma2", "uveal melanoma"]
         if experiment == "lung_h":
-            adata = sc.read(
-                f'{DATA_DIR}/adata_lung_subsampled.h5ad')
+            adata = sc.read(f"{DATA_DIR}/adata_lung_subsampled.h5ad")
             condition_key = "study"
             cell_type_key = ["ann_level_1", "ann_level_2"]
             if test_nr == 10:
                 reference = ["Stanford_Krasnow_bioRxivTravaglini", "Misharin_new"]
-                query = ["Vanderbilt_Kropski_bioRxivHabermann_vand", "Sanger_Teichmann_2019VieiraBraga"]
+                query = [
+                    "Vanderbilt_Kropski_bioRxivHabermann_vand",
+                    "Sanger_Teichmann_2019VieiraBraga",
+                ]
 
         adata = remove_sparsity(adata)
         source_adata = adata[adata.obs.study.isin(reference)].copy()
@@ -207,14 +219,12 @@ for experiment in experiments:
             tau=tau,
             clustering_res=clustering_res,
             labeled_loss_metric=labeled_loss_metric,
-            unlabeled_loss_metric=unlabeled_loss_metric
+            unlabeled_loss_metric=unlabeled_loss_metric,
         )
         ref_time = time.time() - ref_time
-        ref_path = f'{RESULTS_DIR}/{experiment}/{test_nr}_ref_model'
+        ref_path = f"{RESULTS_DIR}/{experiment}/{test_nr}_ref_model"
         tranvae.save(ref_path, overwrite=True)
 
-        text_file_t = open(
-            f'{RESULTS_DIR}/{experiment}/{test_nr}_ref_runtime.txt', "w"
-            )
+        text_file_t = open(f"{RESULTS_DIR}/{experiment}/{test_nr}_ref_runtime.txt", "w")
         m = text_file_t.write(str(ref_time))
         text_file_t.close()

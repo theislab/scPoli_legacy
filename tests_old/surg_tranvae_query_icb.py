@@ -32,14 +32,15 @@ print(args)
 
 import os
 import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
 import torch
-
-import matplotlib.pyplot as plt
 from scarches.dataset.trvae.data_handling import remove_sparsity
-from lataq.models import TRANVAE
 from sklearn.metrics import classification_report
+
+from lataq.models import TRANVAE
 
 sc.settings.set_figure_params(dpi=200, frameon=False)
 sc.set_figure_params(dpi=200)
