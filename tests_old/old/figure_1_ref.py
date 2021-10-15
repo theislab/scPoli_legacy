@@ -14,12 +14,12 @@ torch.set_printoptions(precision=3, sci_mode=False, edgeitems=7)
 
 
 def set_axis_style(ax, labels):
-    ax.get_xaxis().set_tick_params(direction='out')
-    ax.xaxis.set_ticks_position('bottom')
+    ax.get_xaxis().set_tick_params(direction="out")
+    ax.xaxis.set_ticks_position("bottom")
     ax.set_xticks(np.arange(1, len(labels) + 1))
     ax.set_xticklabels(labels)
     ax.set_xlim(0.25, len(labels) + 0.75)
-    ax.set_xlabel('Sample name')
+    ax.set_xlabel("Sample name")
 
 
 # Experiment Params
@@ -56,70 +56,96 @@ early_stopping_kwargs = {
 
 
 if experiment == "pancreas":
-    adata_all = sc.read(os.path.expanduser(f'~/Documents/benchmarking_datasets/pancreas_normalized.h5ad'))
+    adata_all = sc.read(
+        os.path.expanduser(
+            f"~/Documents/benchmarking_datasets/pancreas_normalized.h5ad"
+        )
+    )
     condition_key = "study"
     cell_type_key = "cell_type"
     if test_nr == 1:
-        reference = ['Pancreas inDrop']
-        query = ['Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
+        reference = ["Pancreas inDrop"]
+        query = [
+            "Pancreas SS2",
+            "Pancreas CelSeq2",
+            "Pancreas CelSeq",
+            "Pancreas Fluidigm C1",
+        ]
     elif test_nr == 2:
-        reference = ['Pancreas inDrop', 'Pancreas SS2']
-        query = ['Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
+        reference = ["Pancreas inDrop", "Pancreas SS2"]
+        query = ["Pancreas CelSeq2", "Pancreas CelSeq", "Pancreas Fluidigm C1"]
     elif test_nr == 3:
-        reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2']
-        query = ['Pancreas CelSeq', 'Pancreas Fluidigm C1']
+        reference = ["Pancreas inDrop", "Pancreas SS2", "Pancreas CelSeq2"]
+        query = ["Pancreas CelSeq", "Pancreas Fluidigm C1"]
     elif test_nr == 4:
-        reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq']
-        query = ['Pancreas Fluidigm C1']
+        reference = [
+            "Pancreas inDrop",
+            "Pancreas SS2",
+            "Pancreas CelSeq2",
+            "Pancreas CelSeq",
+        ]
+        query = ["Pancreas Fluidigm C1"]
     elif test_nr == 5:
-        reference = ['Pancreas inDrop', 'Pancreas SS2', 'Pancreas CelSeq2', 'Pancreas CelSeq', 'Pancreas Fluidigm C1']
+        reference = [
+            "Pancreas inDrop",
+            "Pancreas SS2",
+            "Pancreas CelSeq2",
+            "Pancreas CelSeq",
+            "Pancreas Fluidigm C1",
+        ]
         query = []
 if experiment == "pbmc":
-    adata_all = sc.read(os.path.expanduser(
-        f'~/Documents/benchmarking_datasets/Immune_ALL_human_wo_villani_rqr_normalized_hvg.h5ad'))
-    condition_key = 'condition'
-    cell_type_key = 'final_annotation'
+    adata_all = sc.read(
+        os.path.expanduser(
+            f"~/Documents/benchmarking_datasets/Immune_ALL_human_wo_villani_rqr_normalized_hvg.h5ad"
+        )
+    )
+    condition_key = "condition"
+    cell_type_key = "final_annotation"
     if test_nr == 1:
-        reference = ['10X']
-        query = ['Oetjen', 'Sun', 'Freytag']
+        reference = ["10X"]
+        query = ["Oetjen", "Sun", "Freytag"]
     elif test_nr == 2:
-        reference = ['10X', 'Oetjen']
-        query = ['Sun', 'Freytag']
+        reference = ["10X", "Oetjen"]
+        query = ["Sun", "Freytag"]
     elif test_nr == 3:
-        reference = ['10X', 'Oetjen', 'Sun']
-        query = ['Freytag']
+        reference = ["10X", "Oetjen", "Sun"]
+        query = ["Freytag"]
     elif test_nr == 4:
-        reference = ['10X', 'Oetjen', 'Sun', 'Freytag']
+        reference = ["10X", "Oetjen", "Sun", "Freytag"]
         query = []
 if experiment == "brain":
     adata_all = sc.read(
-        os.path.expanduser(f'~/Documents/benchmarking_datasets/mouse_brain_subsampled_normalized_hvg.h5ad'))
+        os.path.expanduser(
+            f"~/Documents/benchmarking_datasets/mouse_brain_subsampled_normalized_hvg.h5ad"
+        )
+    )
     condition_key = "study"
     cell_type_key = "cell_type"
     if test_nr == 1:
-        reference = ['Rosenberg']
-        query = ['Saunders', 'Zeisel', 'Tabula_muris']
+        reference = ["Rosenberg"]
+        query = ["Saunders", "Zeisel", "Tabula_muris"]
     elif test_nr == 2:
-        reference = ['Rosenberg', 'Saunders']
-        query = ['Zeisel', 'Tabula_muris']
+        reference = ["Rosenberg", "Saunders"]
+        query = ["Zeisel", "Tabula_muris"]
     elif test_nr == 3:
-        reference = ['Rosenberg', 'Saunders', 'Zeisel']
-        query = ['Tabula_muris']
+        reference = ["Rosenberg", "Saunders", "Zeisel"]
+        query = ["Tabula_muris"]
     elif test_nr == 4:
-        reference = ['Rosenberg', 'Saunders', 'Zeisel', 'Tabula_muris']
+        reference = ["Rosenberg", "Saunders", "Zeisel", "Tabula_muris"]
         query = []
 
 adata = adata_all.raw.to_adata()
 adata = remove_sparsity(adata)
 source_adata = adata[adata.obs.study.isin(reference)].copy()
 target_adata = adata[adata.obs.study.isin(query)].copy()
-'''
+"""
 batches = adata.obs.study.unique().tolist()
 for batch in batches:
     ad_batch = adata[adata.obs.study.isin([batch])]
     ad_ct = ad_batch[ad_batch.obs[cell_type_key].isin([skip_celltype])]
     print(batch, len(ad_ct))
-'''
+"""
 
 indices = np.arange(len(source_adata))
 labeled_ind = []
@@ -142,7 +168,7 @@ tranvae = TRANVAE(
     hidden_layer_sizes=[128, 128],
     latent_dim=latent_dim,
     use_mmd=use_mmd,
-    labeled_indices=labeled_ind
+    labeled_indices=labeled_ind,
 )
 ref_time = time.time()
 tranvae.train(
@@ -154,33 +180,41 @@ tranvae.train(
     tau=tau,
     clustering_res=clustering_res,
     labeled_loss_metric=labeled_loss_metric,
-    unlabeled_loss_metric=unlabeled_loss_metric
+    unlabeled_loss_metric=unlabeled_loss_metric,
 )
 ref_time = time.time() - ref_time
-ref_path = os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/model')
+ref_path = os.path.expanduser(f"~/Documents/tranvae_testing/figure_1/model")
 tranvae.save(ref_path, overwrite=True)
 
 adata_latent = sc.AnnData(tranvae.get_latent())
-adata_latent.obs['celltype'] = source_adata.obs[cell_type_key].tolist()
-adata_latent.obs['batch'] = source_adata.obs[condition_key].tolist()
+adata_latent.obs["celltype"] = source_adata.obs[cell_type_key].tolist()
+adata_latent.obs["batch"] = source_adata.obs[condition_key].tolist()
 
 sc.pp.neighbors(adata_latent, n_neighbors=8)
 sc.tl.leiden(adata_latent)
 sc.tl.umap(adata_latent)
-sc.pl.umap(adata_latent,
-           color=['batch', 'celltype'],
-           frameon=False,
-           wspace=0.6,
-           show=False
-           )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/umap_tranvae.png'), bbox_inches='tight')
+sc.pl.umap(
+    adata_latent, color=["batch", "celltype"], frameon=False, wspace=0.6, show=False
+)
+plt.savefig(
+    os.path.expanduser(f"~/Documents/tranvae_testing/figure_1/umap_tranvae.png"),
+    bbox_inches="tight",
+)
 
-preds, probs = tranvae.classify(unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric=class_metric)
-print('Distance Classifier:', np.mean(preds == unlabeled_adata.obs[cell_type_key]))
-text_file = open(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/acc_report.txt'), "w")
-n = text_file.write(classification_report(y_true=unlabeled_adata.obs[cell_type_key], y_pred=preds))
+preds, probs = tranvae.classify(
+    unlabeled_adata.X, unlabeled_adata.obs[condition_key], metric=class_metric
+)
+print("Distance Classifier:", np.mean(preds == unlabeled_adata.obs[cell_type_key]))
+text_file = open(
+    os.path.expanduser(f"~/Documents/tranvae_testing/figure_1/acc_report.txt"), "w"
+)
+n = text_file.write(
+    classification_report(y_true=unlabeled_adata.obs[cell_type_key], y_pred=preds)
+)
 text_file.close()
-text_file_t = open(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/runtime.txt'), "w")
+text_file_t = open(
+    os.path.expanduser(f"~/Documents/tranvae_testing/figure_1/runtime.txt"), "w"
+)
 m = text_file_t.write(str(ref_time))
 text_file_t.close()
 
@@ -188,14 +222,17 @@ correct_probs = probs[preds == unlabeled_adata.obs[cell_type_key]]
 incorrect_probs = probs[preds != unlabeled_adata.obs[cell_type_key]]
 data = [correct_probs, incorrect_probs]
 fig, ax = plt.subplots()
-ax.set_title('Default violin plot')
-ax.set_ylabel('Observed values')
+ax.set_title("Default violin plot")
+ax.set_ylabel("Observed values")
 ax.violinplot(data)
-labels = ['Correct', 'Incorrect']
+labels = ["Correct", "Incorrect"]
 set_axis_style(ax, labels)
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/uncertainty.png'), bbox_inches='tight')
+plt.savefig(
+    os.path.expanduser(f"~/Documents/tranvae_testing/figure_1/uncertainty.png"),
+    bbox_inches="tight",
+)
 
-x,y,c,p = tranvae.get_landmarks_info(metric=class_metric, threshold=0.5)
+x, y, c, p = tranvae.get_landmarks_info(metric=class_metric, threshold=0.5)
 print(p)
 print(y)
 y_l = np.unique(y).tolist()
@@ -207,51 +244,71 @@ preds, probs = tranvae.classify(metric=class_metric)
 data_latent = tranvae.get_latent()
 data_extended = np.concatenate((data_latent, x))
 adata_latent = sc.AnnData(data_extended)
-adata_latent.obs['celltype'] = source_adata.obs[cell_type_key].tolist() + y.tolist()
-adata_latent.obs['batch'] = source_adata.obs[condition_key].tolist() + c.tolist()
-adata_latent.obs['predictions'] = preds.tolist() + y.tolist()
+adata_latent.obs["celltype"] = source_adata.obs[cell_type_key].tolist() + y.tolist()
+adata_latent.obs["batch"] = source_adata.obs[condition_key].tolist() + c.tolist()
+adata_latent.obs["predictions"] = preds.tolist() + y.tolist()
 
 sc.pp.neighbors(adata_latent, n_neighbors=8)
 sc.tl.leiden(adata_latent)
 sc.tl.umap(adata_latent)
-sc.pl.umap(adata_latent,
-           color=['batch'],
-           groups=c_l,
-           frameon=False,
-           wspace=0.6,
-           size=50,
-           show=False
-           )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/umap_full_tranvae_batch_l.png'),
-            bbox_inches='tight')
+sc.pl.umap(
+    adata_latent,
+    color=["batch"],
+    groups=c_l,
+    frameon=False,
+    wspace=0.6,
+    size=50,
+    show=False,
+)
+plt.savefig(
+    os.path.expanduser(
+        f"~/Documents/tranvae_testing/figure_1/umap_full_tranvae_batch_l.png"
+    ),
+    bbox_inches="tight",
+)
 
-sc.pl.umap(adata_latent,
-           color=['celltype'],
-           groups=y_l,
-           frameon=False,
-           wspace=0.6,
-           size=50,
-           show=False
-           )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/umap_full_tranvae_ct_l.png'),
-            bbox_inches='tight')
+sc.pl.umap(
+    adata_latent,
+    color=["celltype"],
+    groups=y_l,
+    frameon=False,
+    wspace=0.6,
+    size=50,
+    show=False,
+)
+plt.savefig(
+    os.path.expanduser(
+        f"~/Documents/tranvae_testing/figure_1/umap_full_tranvae_ct_l.png"
+    ),
+    bbox_inches="tight",
+)
 
-sc.pl.umap(adata_latent,
-           color=['celltype'],
-           groups=y_uniq,
-           frameon=False,
-           wspace=0.6,
-           show=False
-           )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/umap_full_tranvae_ct.png'),
-            bbox_inches='tight')
+sc.pl.umap(
+    adata_latent,
+    color=["celltype"],
+    groups=y_uniq,
+    frameon=False,
+    wspace=0.6,
+    show=False,
+)
+plt.savefig(
+    os.path.expanduser(
+        f"~/Documents/tranvae_testing/figure_1/umap_full_tranvae_ct.png"
+    ),
+    bbox_inches="tight",
+)
 
-sc.pl.umap(adata_latent,
-           color=['predictions'],
-           groups=y_uniq_m,
-           frameon=False,
-           wspace=0.6,
-           show=False
-           )
-plt.savefig(os.path.expanduser(f'~/Documents/tranvae_testing/figure_1/umap_full_tranvae_pred.png'),
-            bbox_inches='tight')
+sc.pl.umap(
+    adata_latent,
+    color=["predictions"],
+    groups=y_uniq_m,
+    frameon=False,
+    wspace=0.6,
+    show=False,
+)
+plt.savefig(
+    os.path.expanduser(
+        f"~/Documents/tranvae_testing/figure_1/umap_full_tranvae_pred.png"
+    ),
+    bbox_inches="tight",
+)

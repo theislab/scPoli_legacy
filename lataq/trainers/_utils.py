@@ -1,5 +1,6 @@
 import torch
 
+
 def cov(x, rowvar=False, bias=False, ddof=None, aweights=None):
     """Estimates covariance matrix like numpy.cov"""
     # ensure at least 2D
@@ -21,7 +22,7 @@ def cov(x, rowvar=False, bias=False, ddof=None, aweights=None):
         if not torch.is_tensor(w):
             w = torch.tensor(w, dtype=torch.float)
         w_sum = torch.sum(w)
-        avg = torch.sum(x * (w/w_sum)[:,None], 0)
+        avg = torch.sum(x * (w / w_sum)[:, None], 0)
     else:
         avg = torch.mean(x, 0)
 
@@ -47,8 +48,9 @@ def cov(x, rowvar=False, bias=False, ddof=None, aweights=None):
 
     return c.squeeze()
 
+
 def t_dist(x, y, alpha):
-    """ student t-distribution, as same as used in t-SNE algorithm.
+    """student t-distribution, as same as used in t-SNE algorithm.
              q_ij = 1/(1+dist(x_i, u_j)^2), then normalize it.
     Arguments:
         inputs: the variable containing data, shape=(n_samples, n_features)
