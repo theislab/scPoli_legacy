@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from scarches.models.trvae._utils import one_hot_encoder
 from scarches.models.trvae.losses import mmd, mse, nb, zinb
 from scarches.models.trvae.trvae import trVAE
-from sklearn.preprocessing import MinMaxScaler
 from torch.distributions import MultivariateNormal, Normal, kl_divergence
 
 from lataq.trainers._utils import cov, euclidean_dist
@@ -115,7 +114,7 @@ class tranVAE(trVAE):
         landmark=False,
         classes_list=None,
         metric="dist",
-        get_prob="minmax",
+        get_prob=True,
     ):
         """
         Classifies unlabeled cells using the landmarks obtained during training.
@@ -144,16 +143,13 @@ class tranVAE(trVAE):
 
         if metric == "dist":
             # Idea of using euclidean distances for classification
-            if get_prob == "softmax":
+            if get_prob == True:
                 weighted_distances = F.softmax(-dists, dim=1)
                 probs, preds = torch.max(weighted_distances, dim=1)
                 preds = classes_list[preds]
-            elif get_prob == "minmax":
-                scaler = MinMaxScaler()
-                scaled_distances = scaler.fit_transform(dists.cpu().numpy())
-                probs = torch.tensor(np.min(1 - scaled_distances, axis=1))
-                preds_idx = np.argmin(1 - scaled_distances, axis=1)
-                preds = classes_list[preds_idx]
+            else:
+                probs, preds = torch.max(-dists, dim=1)
+                preds = classes_list[preds]
 
         elif metric == "hyperbolic":
             # Transform Landmarks to hyperbolic ideal points

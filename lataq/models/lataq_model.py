@@ -260,7 +260,7 @@ class LATAQ(BaseMixin):
         c: Optional[np.ndarray] = None,
         landmark=False,
         metric="dist",
-        get_prob="minmax",
+        get_prob=True,
         threshold=0,
     ):
         """
