@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from scarches.models.trvae._utils import one_hot_encoder
 from scarches.models.trvae.losses import mmd, mse, nb, zinb
 from scarches.models.trvae.trvae import trVAE
+from sklearn.preprocessing import MinMaxScaler
 from torch.distributions import MultivariateNormal, Normal, kl_divergence
 
 from lataq.trainers._utils import cov, euclidean_dist
@@ -107,7 +108,7 @@ class tranVAE(trVAE):
             (self.landmarks_labeled["cov"], new_landmark_cov), dim=0
         )
 
-    def classify(self, x, c=None, landmark=False, classes_list=None, metric="dist"):
+    def classify(self, x, c=None, landmark=False, classes_list=None, metric="dist", get_prob='minmax'):
         """
         Classifies unlabeled cells using the landmarks obtained during training.
         Data handling before call to model's classify method.
@@ -123,6 +124,8 @@ class tranVAE(trVAE):
             Tensor of landmark indices corresponding to current hierarchy
         metric: Str
             Method to use for classification. Can be dist, gaussian, hyperbolic
+        get_prob: Str
+            Method to use for scaling euclidean distances to pseudo-probabilities
         """
         if landmark:
             latent = x
@@ -133,9 +136,16 @@ class tranVAE(trVAE):
 
         if metric == "dist":
             # Idea of using euclidean distances for classification
-            weighted_distances = F.softmax(-dists, dim=1)
-            probs, preds = torch.max(weighted_distances, dim=1)
-            preds = classes_list[preds]
+            if get_prob == 'softmax':
+                weighted_distances = F.softmax(-dists, dim=1)
+                probs, preds = torch.max(weighted_distances, dim=1)
+                preds = classes_list[preds]
+            elif get_prob == 'minmax':
+                scaler = MinMaxScaler()
+                scaled_distances = scaler.fit_transform(dists.cpu().numpy())
+                probs = torch.tensor(np.min(1 - scaled_distances, axis=1))
+                preds_idx = np.argmin(1 - scaled_distances, axis=1)
+                preds = classes_list[preds_idx]
 
         elif metric == "hyperbolic":
             # Transform Landmarks to hyperbolic ideal points
