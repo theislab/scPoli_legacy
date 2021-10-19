@@ -260,6 +260,7 @@ class LATAQ(BaseMixin):
         c: Optional[np.ndarray] = None,
         landmark=False,
         metric="dist",
+        get_prob="minmax",
         threshold=0,
     ):
         """
@@ -324,6 +325,7 @@ class LATAQ(BaseMixin):
                         landmark=landmark,
                         classes_list=landmarks_idx,
                         metric=metric,
+                        get_prob=get_prob,
                     )
                 else:  # default routine, classify cell by cell
                     pred, prob = self.model.classify(
@@ -332,6 +334,7 @@ class LATAQ(BaseMixin):
                         landmark=landmark,
                         classes_list=landmarks_idx,
                         metric=metric,
+                        get_prob=get_prob,
                     )
                 preds += [pred.cpu().detach()]
                 probs += [prob.cpu().detach()]
