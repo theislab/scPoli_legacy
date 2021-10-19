@@ -78,8 +78,8 @@ class LATAQ(BaseMixin):
         use_bn: bool = False,
         use_ln: bool = True,
     ):
-        
-        #gather data information
+
+        # gather data information
         self.adata = adata
         self.condition_key_ = condition_key
         self.cell_type_keys_ = cell_type_keys
@@ -127,8 +127,8 @@ class LATAQ(BaseMixin):
                 if unknown_ct in self.cell_types_:
                     del self.cell_types_[unknown_ct]
 
-        #store model parameters
-        self.hidden_layer_sizes_ = hidden_layer_sizes                       
+        # store model parameters
+        self.hidden_layer_sizes_ = hidden_layer_sizes
         self.latent_dim_ = latent_dim
         self.dr_rate_ = dr_rate
         self.use_mmd_ = use_mmd

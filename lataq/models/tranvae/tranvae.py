@@ -108,7 +108,15 @@ class tranVAE(trVAE):
             (self.landmarks_labeled["cov"], new_landmark_cov), dim=0
         )
 
-    def classify(self, x, c=None, landmark=False, classes_list=None, metric="dist", get_prob='minmax'):
+    def classify(
+        self,
+        x,
+        c=None,
+        landmark=False,
+        classes_list=None,
+        metric="dist",
+        get_prob="minmax",
+    ):
         """
         Classifies unlabeled cells using the landmarks obtained during training.
         Data handling before call to model's classify method.
@@ -136,11 +144,11 @@ class tranVAE(trVAE):
 
         if metric == "dist":
             # Idea of using euclidean distances for classification
-            if get_prob == 'softmax':
+            if get_prob == "softmax":
                 weighted_distances = F.softmax(-dists, dim=1)
                 probs, preds = torch.max(weighted_distances, dim=1)
                 preds = classes_list[preds]
-            elif get_prob == 'minmax':
+            elif get_prob == "minmax":
                 scaler = MinMaxScaler()
                 scaled_distances = scaler.fit_transform(dists.cpu().numpy())
                 probs = torch.tensor(np.min(1 - scaled_distances, axis=1))
