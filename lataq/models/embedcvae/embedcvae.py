@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -242,7 +241,15 @@ class EmbedCVAE(nn.Module):
             (self.landmarks_labeled["cov"], new_landmark_cov), dim=0
         )
 
-    def classify(self, x, c=None, landmark=False, classes_list=None, metric="dist"):
+    def classify(
+        self,
+        x,
+        c=None,
+        landmark=False,
+        classes_list=None,
+        metric="dist",
+        get_prob=True,
+    ):
         """
         Classifies unlabeled cells using the landmarks obtained during training.
         Data handling before call to model's classify method.
@@ -258,6 +265,8 @@ class EmbedCVAE(nn.Module):
             Tensor of landmark indices corresponding to current hierarchy
         metric: Str
             Method to use for classification. Can be dist, gaussian, hyperbolic
+        get_prob: Str
+            Method to use for scaling euclidean distances to pseudo-probabilities
         """
         if landmark:
             latent = x
@@ -268,9 +277,13 @@ class EmbedCVAE(nn.Module):
 
         if metric == "dist":
             # Idea of using euclidean distances for classification
-            weighted_distances = F.softmax(-dists, dim=1)
-            probs, preds = torch.max(weighted_distances, dim=1)
-            preds = classes_list[preds]
+            if get_prob == True:
+                weighted_distances = F.softmax(-dists, dim=1)
+                probs, preds = torch.max(weighted_distances, dim=1)
+                preds = classes_list[preds]
+            else:
+                probs, preds = torch.max(-dists, dim=1)
+                preds = classes_list[preds]
 
         elif metric == "hyperbolic":
             # Transform Landmarks to hyperbolic ideal points
