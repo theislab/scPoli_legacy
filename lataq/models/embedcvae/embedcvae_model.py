@@ -155,13 +155,14 @@ class EMBEDCVAE(LATAQ):
         """
         if isinstance(reference_model, str):
             attr_dict, model_state_dict, var_names = cls._load_params(reference_model)
-            _validate_var_names(adata, var_names)
+            adata = _validate_var_names(adata, var_names)
         else:
             attr_dict = reference_model._get_public_attributes()
             model_state_dict = reference_model.model.state_dict()
         init_params = cls._get_init_params_from_dict(attr_dict)
 
         conditions = init_params["conditions"]
+        n_reference_conditions = len(conditions)
         condition_key = init_params["condition_key"]
 
         new_conditions = []
@@ -204,12 +205,16 @@ class EMBEDCVAE(LATAQ):
         init_params["labeled_indices"] = labeled_indices
         init_params["unknown_ct_names"] = unknown_ct_names
         new_model = cls(adata, **init_params)
+        new_model.model.n_reference_conditions = n_reference_conditions
+        print(new_model.model.n_reference_conditions)
         new_model._load_expand_params_from_dict(model_state_dict)
 
         if freeze:
             new_model.model.freeze = True
             for name, p in new_model.model.named_parameters():
                 p.requires_grad = False
+                if "embedding" in name:
+                    p.requires_grad = True
                 if "theta" in name:
                     p.requires_grad = True
                 if freeze_expression:

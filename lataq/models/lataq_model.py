@@ -316,11 +316,12 @@ class LATAQ(BaseMixin):
 
             preds = []
             probs = []
+            weighted_distances = []
             indices = torch.arange(x.size(0), device=device)
             subsampled_indices = indices.split(512)
             for batch in subsampled_indices:
                 if landmark:  # classify landmarks used for unseen cell type
-                    pred, prob = self.model.classify(
+                    pred, prob, weighted_distance = self.model.classify(
                         x[batch, :].to(device),
                         landmark=landmark,
                         classes_list=landmarks_idx,
@@ -328,7 +329,7 @@ class LATAQ(BaseMixin):
                         get_prob=get_prob,
                     )
                 else:  # default routine, classify cell by cell
-                    pred, prob = self.model.classify(
+                    pred, prob, weighted_distance = self.model.classify(
                         x[batch, :].to(device),
                         c[batch].to(device),
                         landmark=landmark,
@@ -338,9 +339,11 @@ class LATAQ(BaseMixin):
                     )
                 preds += [pred.cpu().detach()]
                 probs += [prob.cpu().detach()]
+                weighted_distances += [weighted_distance.cpu().detach()]
 
             full_pred = np.array(torch.cat(preds))
             full_prob = np.array(torch.cat(probs))
+            full_weighted_distances = np.array(torch.cat(weighted_distances))
             inv_ct_encoder = {v: k for k, v in self.model.cell_type_encoder.items()}
             full_pred_names = []
 
@@ -353,6 +356,7 @@ class LATAQ(BaseMixin):
             results[cell_type_key] = {
                 "preds": np.array(full_pred_names),
                 "probs": full_prob,
+                "weighted_distances": full_weighted_distances,
             }
 
         return results

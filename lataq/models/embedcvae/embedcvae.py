@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scarches.models.trvae._utils import one_hot_encoder
 from scarches.models.trvae.losses import mse, nb, zinb
-from torch.distributions import MultivariateNormal, Normal, kl_divergence
+from torch.distributions import Normal, kl_divergence
 
 from lataq.trainers._utils import cov, euclidean_dist
 
@@ -38,6 +38,7 @@ class EmbedCVAE(nn.Module):
             k: v for k, v in zip(cell_types, range(len(cell_types)))
         }
         self.n_conditions = len(conditions)
+        self.n_reference_conditions = None
         self.conditions = conditions
         self.condition_encoder = {
             k: v for k, v in zip(conditions, range(len(conditions)))
@@ -62,7 +63,7 @@ class EmbedCVAE(nn.Module):
             {"mean": None} if landmarks_unlabeled is None else landmarks_unlabeled
         )
         self.new_landmarks = None
-
+        self.num_reference_conditions = None
         if self.landmarks_labeled["mean"] is not None:
             # Save indices of possible new landmarks to train
             self.new_landmarks = []
@@ -88,10 +89,7 @@ class EmbedCVAE(nn.Module):
         decoder_layer_sizes.reverse()
         decoder_layer_sizes.append(self.input_dim)
 
-        self.embedding = nn.Embedding(
-            self.n_conditions,
-            self.embedding_dim,
-        )
+        self.embedding = nn.Embedding(self.n_conditions, self.embedding_dim, max_norm=1)
 
         print(
             "Embedding dictionary:\n",
@@ -278,88 +276,87 @@ class EmbedCVAE(nn.Module):
         if metric == "dist":
             # Idea of using euclidean distances for classification
             if get_prob == True:
-                weighted_distances = F.softmax(-dists, dim=1)
-                probs, preds = torch.max(weighted_distances, dim=1)
+                dists = F.softmax(-dists, dim=1)
+                probs, preds = torch.max(dists, dim=1)
                 preds = classes_list[preds]
             else:
-                probs, preds = torch.max(-dists, dim=1)
+                probs, preds = torch.min(dists, dim=1)
                 preds = classes_list[preds]
+        # elif metric == "hyperbolic":
+        #     # Transform Landmarks to hyperbolic ideal points
+        #     h_landmarks = F.normalize(
+        #         self.landmarks_labeled["mean"][classes_list, :], p=2, dim=1
+        #     )
 
-        elif metric == "hyperbolic":
-            # Transform Landmarks to hyperbolic ideal points
-            h_landmarks = F.normalize(
-                self.landmarks_labeled["mean"][classes_list, :], p=2, dim=1
-            )
+        #     # Transform latent to hyperbolic space
+        #     transformation_m = (
+        #         (
+        #             torch.tanh(torch.norm(latent, p=2, dim=1) / 2)
+        #             / torch.norm(latent, p=2, dim=1)
+        #         )
+        #         .unsqueeze(dim=1)
+        #         .expand(-1, latent.size(1))
+        #     )
+        #     h_latent = transformation_m * latent
 
-            # Transform latent to hyperbolic space
-            transformation_m = (
-                (
-                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2)
-                    / torch.norm(latent, p=2, dim=1)
-                )
-                .unsqueeze(dim=1)
-                .expand(-1, latent.size(1))
-            )
-            h_latent = transformation_m * latent
+        #     # Get classification matrix n_cells x n_cell_types and get the predictions by max
+        #     class_m = torch.matmul(
+        #         h_latent
+        #         / torch.norm(h_latent, p=2, dim=1)
+        #         .unsqueeze(dim=1)
+        #         .expand(-1, latent.size(1)),
+        #         h_landmarks.T,
+        #     )
+        #     class_m = F.normalize(class_m, p=1, dim=1)
+        #     probs, preds = torch.max(class_m, dim=1)
 
-            # Get classification matrix n_cells x n_cell_types and get the predictions by max
-            class_m = torch.matmul(
-                h_latent
-                / torch.norm(h_latent, p=2, dim=1)
-                .unsqueeze(dim=1)
-                .expand(-1, latent.size(1)),
-                h_landmarks.T,
-            )
-            class_m = F.normalize(class_m, p=1, dim=1)
-            probs, preds = torch.max(class_m, dim=1)
+        # elif metric == "gaussian":
+        #     probs = []
+        #     for ct_class in classes_list:
+        #         mean = self.landmarks_labeled["mean"][ct_class, :]
+        #         cov_matrix = self.landmarks_labeled["cov"][ct_class, :]
+        #         # ID addition for stability
+        #         # This has to be fixed in a better way maybe
+        #         cov_matrix = (
+        #             cov_matrix
+        #             + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
+        #         )
+        #         # if torch.linalg.det(cov_matrix) == 0:
+        #         #    cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
+        #         ct_distr = MultivariateNormal(mean, cov_matrix)
+        #         probs.append(ct_distr.log_prob(latent).exp())
 
-        elif metric == "gaussian":
-            probs = []
-            for ct_class in classes_list:
-                mean = self.landmarks_labeled["mean"][ct_class, :]
-                cov_matrix = self.landmarks_labeled["cov"][ct_class, :]
-                # ID addition for stability
-                # This has to be fixed in a better way maybe
-                cov_matrix = (
-                    cov_matrix
-                    + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
-                )
-                # if torch.linalg.det(cov_matrix) == 0:
-                #    cov_matrix = cov_matrix + torch.eye(self.latent_dim, device=cov_matrix.device) * 1e-3
-                ct_distr = MultivariateNormal(mean, cov_matrix)
-                probs.append(ct_distr.log_prob(latent).exp())
+        #     probs = torch.stack(probs)
+        #     probs = (probs / probs.sum(0)).T
+        #     probs, preds = torch.max(probs, dim=1)
+        #     preds = classes_list[preds]
 
-            probs = torch.stack(probs)
-            probs = (probs / probs.sum(0)).T
-            probs, preds = torch.max(probs, dim=1)
-            preds = classes_list[preds]
+        # elif metric == "overlap":
+        #     # Own idea of cell balls with center at landmark and radius of 95%-quantile
+        #     assert False, "NEEDS CHECK"
+        #     quantiles_view = (
+        #         self.landmarks_labeled["cov"]
+        #         .unsqueeze(0)
+        #         .expand(dists.size(0), dists.size(1))
+        #     )
+        #     # overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
+        #     # overlap = 1 - (quantiles_view - overlap / quantiles_view)
+        #     overlap = dists / quantiles_view
+        #     overlap = (overlap.T / overlap.max(1)[0]).T
+        #     overlap = 1 - overlap
+        #     overlap = (overlap.T / overlap.sum(1)).T
+        #     probs, preds = torch.max(overlap, dim=1)
+        #     preds = classes_list[preds]
 
-        elif metric == "overlap":
-            # Own idea of cell balls with center at landmark and radius of 95%-quantile
-            assert False, "NEEDS CHECK"
-            quantiles_view = (
-                self.landmarks_labeled["cov"]
-                .unsqueeze(0)
-                .expand(dists.size(0), dists.size(1))
-            )
-            # overlap = torch.max(torch.zeros_like(dists), (quantiles_view - dists))
-            # overlap = 1 - (quantiles_view - overlap / quantiles_view)
-            overlap = dists / quantiles_view
-            overlap = (overlap.T / overlap.max(1)[0]).T
-            overlap = 1 - overlap
-            overlap = (overlap.T / overlap.sum(1)).T
-            probs, preds = torch.max(overlap, dim=1)
-            preds = classes_list[preds]
-
-        elif metric == "seurat":
-            # Idea of using seurat distances for classification
-            # See https://www.cell.com/cell/pdf/S0092-8674(19)30559-8.pdf
-            assert False, "NEEDS CHECK"
-            dists_t = 1 - (dists.T / dists.max(1)[0]).T
-            prob = 1 - torch.exp(-dists_t / 4)
-            prob = (prob.T / prob.sum(1)).T
-            probs, preds = torch.max(prob, dim=1)
-            preds = classes_list[preds]
+        # elif metric == "seurat":
+        #     # Idea of using seurat distances for classification
+        #     # See https://www.cell.com/cell/pdf/S0092-8674(19)30559-8.pdf
+        #     assert False, "NEEDS CHECK"
+        #     dists_t = 1 - (dists.T / dists.max(1)[0]).T
+        #     prob = 1 - torch.exp(-dists_t / 4)
+        #     prob = (prob.T / prob.sum(1)).T
+        #     probs, preds = torch.max(prob, dim=1)
+        #     preds = classes_list[preds]
 
         else:
             assert False, (
@@ -367,7 +364,7 @@ class EmbedCVAE(nn.Module):
                 f"between 'exp', 'var' or 'seurat'!"
             )
 
-        return preds, probs
+        return preds, probs, dists
 
     def sampling(self, mu, log_var):
         """Samples from standard Normal distribution and applies re-parametrization trick.

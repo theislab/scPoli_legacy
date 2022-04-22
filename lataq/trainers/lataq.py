@@ -1,8 +1,11 @@
+import time
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
 import scanpy as sc
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from scarches.trainers.trvae._utils import make_dataset
 from scarches.trainers.trvae.trainer import Trainer
@@ -139,6 +142,96 @@ class LATAQtrainer(Trainer):
             self.landmarks_labeled_cov = self.landmarks_labeled_cov.to(
                 device=self.device
             )
+
+    def train(self, n_epochs=400, lr=1e-3, eps=0.01):
+        begin_loader = time.time()
+        print("loaders init")
+        self.initialize_loaders()
+        print("loaders init done")
+        print(time.time() - begin_loader)
+        begin = time.time()
+        self.model.train()
+        self.n_epochs = n_epochs
+
+        params_embedding = []
+        params = []
+        for name, p in self.model.named_parameters():
+            if p.requires_grad:
+                if "embedding" in name:
+                    params_embedding.append(p)
+                else:
+                    params.append(p)
+
+        # params = filter(lambda p: p.requires_grad, self.model.parameters())
+
+        self.optimizer = torch.optim.Adam(
+            [
+                {"params": params_embedding, "weight_decay": 0},
+                {"params": params},
+            ],
+            lr=lr,
+            eps=eps,
+            weight_decay=self.weight_decay,
+        )
+
+        # self.optimizer = torch.optim.Adam(
+        #    params, lr=lr, eps=eps, weight_decay=self.weight_decay
+        #    )
+
+        self.before_loop()
+
+        for self.epoch in range(n_epochs):
+            self.on_epoch_begin(lr, eps)
+            self.iter_logs = defaultdict(list)
+            for self.iter, batch_data in enumerate(self.dataloader_train):
+                for key, batch in batch_data.items():
+                    batch_data[key] = batch.to(self.device)
+
+                # Loss Calculation
+                self.on_iteration(batch_data)
+
+            # Validation of Model, Monitoring, Early Stopping
+            self.on_epoch_end()
+            if self.use_early_stopping:
+                if not self.check_early_stop():
+                    break
+
+        if self.best_state_dict is not None and self.reload_best:
+            print("Saving best state of network...")
+            print("Best State was in Epoch", self.best_epoch)
+            self.model.load_state_dict(self.best_state_dict)
+
+        self.model.eval()
+        self.after_loop()
+
+        self.training_time += time.time() - begin
+
+    def on_iteration(self, batch_data):
+        # Dont update any weight on first layers except condition weights
+        if self.model.freeze:
+            for name, module in self.model.named_modules():
+                if isinstance(module, nn.BatchNorm1d):
+                    if not module.weight.requires_grad:
+                        module.affine = False
+                        module.track_running_stats = False
+
+        # Calculate Loss depending on Trainer/Model
+        self.current_loss = loss = self.loss(batch_data)
+        self.optimizer.zero_grad()
+
+        loss.backward()
+        # Gradient Clipping
+        if self.clip_value > 0:
+            torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip_value)
+        # print(self.model.embedding.weight.grad)
+        if self.model.freeze == True:
+            if self.model.embedding:
+                # print(self.model.n_reference_conditions)
+                self.model.embedding.weight.grad[
+                    : self.model.n_reference_conditions
+                ] = 0
+        # print(self.model.embedding.weight.grad)
+        self.optimizer.step()
 
     def update_labeled_indices(self, labeled_indices):
         """
