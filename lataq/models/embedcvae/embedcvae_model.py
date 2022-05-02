@@ -1,6 +1,9 @@
 from typing import Optional, Union
 
 import torch
+import pickle
+from pathlib import PurePath
+from scipy.sparse import issparse
 from anndata import AnnData
 from scarches.models.base._utils import _validate_var_names
 
@@ -249,3 +252,83 @@ class EMBEDCVAE(LATAQ):
                 load_state_dict[key] = fixed_ten
 
         self.model.load_state_dict(load_state_dict)
+
+    @classmethod
+    def zero_shot_surgery(cls, adata, model_path, force_cuda=False, copy=False):
+        if copy:
+            adata = adata.copy()
+
+        with open(PurePath(model_path) / "attr.pkl", "rb") as handle:
+            attr_dict = pickle.load(handle)
+
+        ref_conditions = attr_dict["conditions_"]
+        condition_key = attr_dict["condition_key_"]
+
+        original_key = "_original_" + condition_key
+        adata.obs[original_key] = adata.obs[condition_key].copy()
+
+        adata.strings_to_categoricals()
+
+        original_cats = adata.obs[condition_key].unique()
+
+        adata.obs[condition_key] = adata.obs[condition_key].cat.rename_categories(ref_conditions[:len(original_cats)])
+
+        ref_model = cls.load(model_path, adata)
+        if force_cuda:
+            ref_model.model = ref_model.model.cuda()
+
+        device = next(ref_model.model.parameters()).device
+        print("Device", device)
+
+        rename_cats = {}
+
+        for cat in original_cats:
+            cat_mask = adata.obs[original_key] == cat
+            X = adata.X[cat_mask]
+            print("Processing original category:", cat, "n_obs:", X.shape[0])
+            if issparse(X):
+                X = X.toarray()
+            X = torch.tensor(X, device=device)
+            sizefactor = X.sum(-1)
+            c = torch.zeros(X.shape[0], device=device, dtype=int)
+
+            min_loss = None
+            for ref_cat, ref_cat_val in ref_model.model.condition_encoder.items():
+                print("  processing", ref_cat)
+                c[:] = ref_cat_val
+                _, recon_loss, _, _ = ref_model.model.forward(x=X, batch=c, sizefactor=sizefactor)
+                if min_loss is None:
+                    min_loss = recon_loss
+                    rename_cats[cat] = ref_cat
+                else:
+                    if recon_loss < min_loss:
+                        min_loss = recon_loss
+                        rename_cats[cat] = ref_cat
+
+        map_cats = adata.obs[original_key].map(rename_cats).astype("category")
+
+        adata.obs[condition_key] = map_cats
+        ref_model.adata.obs[condition_key] = map_cats
+
+        return ref_model, rename_cats
+
+    @classmethod
+    def one_shot_surgery(cls, adata, model_path, force_cuda=False, copy=False, **kwargs):
+        if copy:
+            adata = adata.copy()
+
+        ref_model, rename_cats = cls.zero_shot_surgery(adata, model_path, force_cuda=force_cuda, copy=False)
+
+        cond_key = ref_model.condition_key_
+        adata.obs[cond_key] = adata.obs["_original_" + cond_key]
+
+        query_model = cls.load_query_data(adata, ref_model, **kwargs)
+        
+        cond_enc = query_model.model.condition_encoder
+
+        to_set = [cond_enc[cat] for cat in rename_cats]
+        to_get = [cond_enc[cat] for cat in rename_cats.values()]
+
+        query_model.model.embedding.weight.data[to_set] = query_model.model.embedding.weight.data[to_get]
+
+        return query_model
