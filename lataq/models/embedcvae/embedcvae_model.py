@@ -313,7 +313,16 @@ class EMBEDCVAE(LATAQ):
         return ref_model, rename_cats
 
     @classmethod
-    def one_shot_surgery(cls, adata, model_path, force_cuda=False, copy=False, **kwargs):
+    def one_shot_surgery(
+        cls,
+        adata,
+        model_path,
+        force_cuda=False,
+        copy=False,
+        subsample=False,
+        pretrain=0,
+        **kwargs
+    ):
         if copy:
             adata = adata.copy()
 
@@ -322,13 +331,25 @@ class EMBEDCVAE(LATAQ):
         cond_key = ref_model.condition_key_
         adata.obs[cond_key] = adata.obs["_original_" + cond_key]
 
+        if subsample:
+            mask = np.full(adata.n_obs, False)
+            cats = adata.obs[cond_key].unique()
+            for cat in cats:
+                cat_idx = np.where(adata.obs[cond_key] == cat)[0]
+                size = int(len(cat_idx) * 0.2)
+                mask[np.random.choice(cat_idx, size, replace=False)] = True
+            adata = adata[mask]
+
         query_model = cls.load_query_data(adata, ref_model, **kwargs)
-        
+
         cond_enc = query_model.model.condition_encoder
 
         to_set = [cond_enc[cat] for cat in rename_cats]
         to_get = [cond_enc[cat] for cat in rename_cats.values()]
 
         query_model.model.embedding.weight.data[to_set] = query_model.model.embedding.weight.data[to_get]
+
+        if pretrain > 0:
+            query_model.train(n_epochs=pretrain, pretraining_epochs=pretrain)
 
         return query_model
