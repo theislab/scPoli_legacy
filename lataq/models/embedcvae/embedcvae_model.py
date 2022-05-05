@@ -319,10 +319,12 @@ class EMBEDCVAE(LATAQ):
         model_path,
         force_cuda=False,
         copy=False,
-        subsample=False,
+        subsample=1.,
         pretrain=0,
         **kwargs
     ):
+        assert subsample > 0. and subsamle <= 1.
+
         if copy:
             adata = adata.copy()
 
@@ -331,12 +333,12 @@ class EMBEDCVAE(LATAQ):
         cond_key = ref_model.condition_key_
         adata.obs[cond_key] = adata.obs["_original_" + cond_key]
 
-        if subsample:
+        if subsample < 1.:
             mask = np.full(adata.n_obs, False)
             cats = adata.obs[cond_key].unique()
             for cat in cats:
                 cat_idx = np.where(adata.obs[cond_key] == cat)[0]
-                size = int(len(cat_idx) * 0.2)
+                size = int(len(cat_idx) * subsample)
                 mask[np.random.choice(cat_idx, size, replace=False)] = True
             adata = adata[mask]
 
