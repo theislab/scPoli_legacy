@@ -519,8 +519,9 @@ class LATAQtrainer(Trainer):
         self.model.landmarks_labeled["cov"] = self.landmarks_labeled_cov
 
         if (
-            0 in self.train_data.labeled_vector.unique().tolist()
-            or self.model.unknown_ct_names is not None
+            (0 in self.train_data.labeled_vector.unique().tolist()
+            or self.model.unknown_ct_names is not None)
+            and self.landmarks_unlabeled is not None
         ):
             self.model.landmarks_unlabeled["mean"] = torch.stack(
                 self.landmarks_unlabeled
