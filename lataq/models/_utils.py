@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 
 def subsample_conditions(adata, cond_key, subsample):
     mask = np.full(adata.n_obs, False)
