@@ -8,6 +8,7 @@ from anndata import AnnData
 from scarches.models.base._utils import _validate_var_names
 
 from .. import LATAQ
+from .._utils import subsample_conditions
 from .embedcvae import EmbedCVAE
 
 
@@ -254,7 +255,9 @@ class EMBEDCVAE(LATAQ):
         self.model.load_state_dict(load_state_dict)
 
     @classmethod
-    def zero_shot_surgery(cls, adata, model_path, force_cuda=False, copy=False):
+    def zero_shot_surgery(cls, adata, model_path, force_cuda=False, copy=False, subsample=1.):
+        assert subsample > 0. and subsample <= 1.
+
         if copy:
             adata = adata.copy()
 
@@ -263,6 +266,9 @@ class EMBEDCVAE(LATAQ):
 
         ref_conditions = attr_dict["conditions_"]
         condition_key = attr_dict["condition_key_"]
+
+        if subsample < 1.:
+            adata = subsample_conditions(adata, condition_key, subsample)
 
         original_key = "_original_" + condition_key
         adata.obs[original_key] = adata.obs[condition_key].copy()
@@ -323,7 +329,7 @@ class EMBEDCVAE(LATAQ):
         pretrain=0,
         **kwargs
     ):
-        assert subsample > 0. and subsamle <= 1.
+        assert subsample > 0. and subsample <= 1.
 
         if copy:
             adata = adata.copy()
@@ -334,13 +340,7 @@ class EMBEDCVAE(LATAQ):
         adata.obs[cond_key] = adata.obs["_original_" + cond_key]
 
         if subsample < 1.:
-            mask = np.full(adata.n_obs, False)
-            cats = adata.obs[cond_key].unique()
-            for cat in cats:
-                cat_idx = np.where(adata.obs[cond_key] == cat)[0]
-                size = int(len(cat_idx) * subsample)
-                mask[np.random.choice(cat_idx, size, replace=False)] = True
-            adata = adata[mask]
+            adata = subsample_conditions(adata, cond_key, subsample)
 
         query_model = cls.load_query_data(adata, ref_model, **kwargs)
 
