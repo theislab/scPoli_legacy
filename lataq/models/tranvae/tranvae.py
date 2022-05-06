@@ -233,7 +233,7 @@ class tranVAE(trVAE):
                 f"between 'exp', 'var' or 'seurat'!"
             )
 
-        return preds, probs
+        return preds, probs, dists
 
     def forward(
         self, x=None, batch=None, sizefactor=None, celltypes=None, labeled=None

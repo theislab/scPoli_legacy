@@ -225,7 +225,7 @@ class LATAQtrainer(Trainer):
             torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip_value)
         # print(self.model.embedding.weight.grad)
         if self.model.freeze == True:
-            if self.model.embedding:
+            if hasattr(self.model, 'embedding') and self.model.embedding:
                 # print(self.model.n_reference_conditions)
                 self.model.embedding.weight.grad[
                     : self.model.n_reference_conditions
@@ -284,6 +284,7 @@ class LATAQtrainer(Trainer):
         # Init labeled Landmarks if labeled data existent
         if 1 in self.train_data.labeled_vector.unique().tolist():
             labeled_latent = latent[self.train_data.labeled_vector == 1]
+            # TODO: access `cell_types` using an init parameter
             labeled_cell_types = self.train_data.cell_types[
                 self.train_data.labeled_vector == 1, :
             ]  # get cell type annot

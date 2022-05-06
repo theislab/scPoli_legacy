@@ -170,6 +170,10 @@ class TRANVAE(LATAQ):
         new_model: trVAE
              New TRVAE model to train on query data.
         """
+        if labeled_indices is None:
+            # TODO: check the possibility of None
+            raise Exception("parameter `labeled_indices` cannot be None.")
+
         if isinstance(reference_model, str):
             attr_dict, model_state_dict, var_names = cls._load_params(reference_model)
             adata = _validate_var_names(adata, var_names)
