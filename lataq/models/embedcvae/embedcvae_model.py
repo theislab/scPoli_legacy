@@ -43,6 +43,7 @@ class EMBEDCVAE(LATAQ):
         use_ln: bool = True,
         inject_condition: list = ["decoder"],
         embedding_dim: int = 10,
+        max_norm: int = None,
     ):
         super(EMBEDCVAE, self).__init__(
             adata,
@@ -67,7 +68,7 @@ class EMBEDCVAE(LATAQ):
         )
         self.inject_condition_ = inject_condition
         self.embedding_dim_ = embedding_dim
-
+        self.max_norm_ = max_norm
         self.model = EmbedCVAE(
             input_dim=self.input_dim_,
             conditions=self.conditions_,
@@ -87,6 +88,7 @@ class EMBEDCVAE(LATAQ):
             beta=self.beta_,
             use_bn=self.use_bn_,
             use_ln=self.use_ln_,
+            max_norm=self.max_norm_,
         )
         if self.landmarks_labeled_["mean"] is not None:
             self.landmarks_labeled_["mean"] = self.landmarks_labeled_["mean"].to(

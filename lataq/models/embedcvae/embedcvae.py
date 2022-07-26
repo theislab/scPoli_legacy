@@ -26,6 +26,7 @@ class EmbedCVAE(nn.Module):
         use_ln,
         landmarks_labeled,
         landmarks_unlabeled,
+        max_norm
     ):
         super().__init__()
 
@@ -50,6 +51,7 @@ class EmbedCVAE(nn.Module):
         self.recon_loss = recon_loss
         self.hidden_layer_sizes = hidden_layer_sizes
         self.freeze = False
+        self.max_norm = max_norm
         self.unknown_ct_names = unknown_ct_names
         if self.unknown_ct_names is not None:
             for unknown_ct in self.unknown_ct_names:
@@ -89,7 +91,7 @@ class EmbedCVAE(nn.Module):
         decoder_layer_sizes.reverse()
         decoder_layer_sizes.append(self.input_dim)
 
-        self.embedding = nn.Embedding(self.n_conditions, self.embedding_dim, max_norm=1)
+        self.embedding = nn.Embedding(self.n_conditions, self.embedding_dim, max_norm=self.max_norm)
 
         print(
             "Embedding dictionary:\n",
@@ -271,7 +273,7 @@ class EmbedCVAE(nn.Module):
         else:
             latent = self.get_latent(x, c)
 
-        dists = euclidean_dist(latent, self.landmarks_labeled["mean"][classes_list, :])
+        dists = euclidean_dist(latent, self.landmarks_labeled["mean"][classes_list, :].to(latent.device))
 
         if metric == "dist":
             # Idea of using euclidean distances for classification
