@@ -162,8 +162,6 @@ class LATAQtrainer(Trainer):
                 else:
                     params.append(p)
 
-        # params = filter(lambda p: p.requires_grad, self.model.parameters())
-
         self.optimizer = torch.optim.Adam(
             [
                 {"params": params_embedding, "weight_decay": 0},
@@ -173,10 +171,6 @@ class LATAQtrainer(Trainer):
             eps=eps,
             weight_decay=self.weight_decay,
         )
-
-        # self.optimizer = torch.optim.Adam(
-        #    params, lr=lr, eps=eps, weight_decay=self.weight_decay
-        #    )
 
         self.before_loop()
 
@@ -603,79 +597,14 @@ class LATAQtrainer(Trainer):
         if unique_labels.tolist() == [-1]:
             return loss
 
-        if self.loss_metric == "dist":
-            # Basic euclidean distance loss
-            for value in unique_labels:
-                if value == -1:
-                    continue
-                indices = labels.eq(value).nonzero(as_tuple=False)[:, 0]
-                label_loss = distances[indices, value].sum(0) / len(indices)
-                loss += label_loss
-
-        elif self.loss_metric == "hyperbolic":
-            # Transform Landmarks to hyperbolic ideal points
-            h_landmarks = F.normalize(landmarks, p=2, dim=1)
-
-            # Transform latent to hyperbolic space and filter out cells with label == -1 which correspond to "unknown"
-            transformation_m = (
-                (
-                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2)
-                    / torch.norm(latent, p=2, dim=1)
-                )
-                .unsqueeze(dim=1)
-                .expand(-1, latent.size(1))
-            )
-            h_latent = transformation_m * latent
-            h_latent = h_latent[labels.squeeze(1) != -1, :]
-
-            # Get tensor of corresponding landmarks and filter out cells with label == -1 which correspond to "unknown"
-            corr_land = h_landmarks[labels.squeeze(1), :]
-            corr_land = corr_land[labels.squeeze(1) != -1, :]
-
-            # Buseman loss
-            b_loss = torch.log(
-                self.log1p_scale
-                + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2
-                / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
-            )
-
-            # Overconfidence penalty loss
-            overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
-
-            # Calculate overall loss by taking mean of each cell
-            loss = (b_loss - self.overconfidence_scale * overconf_loss).mean()
-
-        elif self.loss_metric == "overlap":
-            # Own idea of cell balls with center at landmark and radius of 95%-quantile
-            assert False, "This loss may not work at current state"
-            id = torch.eye(len(landmarks), device=self.device)
-            truth_id = id[labels]
-            quantiles_view = self.landmarks_labeled_cov.unsqueeze(0).expand(
-                distances.size(0), distances.size(1)
-            )
-            overlap = torch.max(
-                torch.zeros_like(distances),
-                (quantiles_view - distances) / quantiles_view,
-            )
-            loss = torch.pow(truth_id - overlap, 2).sum(1).mean(0)
-
-        elif self.loss_metric == "seurat":
-            # Idea of using seurat distances for loss
-            # See https://www.cell.com/cell/pdf/S0092-8674(19)30559-8.pdf
-            # assert False, "This loss may not work at current state"
-            dists_t = 1 - (distances.T / distances.max(1)[0]).T
-            prob = 1 - torch.exp(-dists_t / 4)
-            prob = (prob.T / prob.sum(1)).T
-            id = torch.eye(len(landmarks), device=self.device)
-            truth_id = id[labels]
-            loss = torch.pow(truth_id - prob, 2).sum(1).mean(0)
-
-        else:
-            assert False, (
-                f"'{self.loss_metric}' is not available as a loss function please choose "
-                f"between 'dist','t' or 'seurat'!"
-            )
-
+        # Basic euclidean distance loss
+        for value in unique_labels:
+            if value == -1:
+                continue
+            indices = labels.eq(value).nonzero(as_tuple=False)[:, 0]
+            label_loss = distances[indices, value].sum(0) / len(indices)
+            loss += label_loss
+                
         return loss
 
     def landmark_unlabeled_loss(self, latent, landmarks):
@@ -694,84 +623,8 @@ class LATAQtrainer(Trainer):
         args_uniq = torch.unique(y_hat, sorted=True)
         args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
 
-        if self.loss_metric == "dist":
-            # Basic euclidean distance loss
-            loss_val = torch.stack(
-                [min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]
-            ).mean()
-
-        elif self.loss_metric == "hyperbolic":
-            # Transform Landmarks to hyperbolic ideal points
-            h_landmarks = F.normalize(landmarks, p=2, dim=1)
-
-            # Transform latent to hyperbolic space
-            transformation_m = (
-                (
-                    torch.tanh(torch.norm(latent, p=2, dim=1) / 2)
-                    / torch.norm(latent, p=2, dim=1)
-                )
-                .unsqueeze(dim=1)
-                .expand(-1, latent.size(1))
-            )
-            h_latent = transformation_m * latent
-
-            # Get tensor of closest landmarks in Euclidean space
-            corr_land = h_landmarks[y_hat, :]
-
-            # Buseman loss
-            b_loss = torch.log(
-                self.log1p_scale
-                + torch.norm(corr_land - h_latent, p=2, dim=1) ** 2
-                / (1 - torch.norm(h_latent, p=2, dim=1) ** 2)
-            )
-
-            # Overconfidence penalty loss
-            overconf_loss = torch.log(1 - torch.norm(h_latent, p=2, dim=1) ** 2)
-
-            # Calculate overall loss by taking mean of each cell
-            loss_val = (b_loss - self.overconfidence_scale * overconf_loss).mean()
-
-        elif self.loss_metric == "overlap":
-            # Own idea of cell balls with center at landmark and radius of 95%-quantile
-            assert False, "This loss may not work at current state"
-            quantiles_view = self.landmarks_unlabeled_q.unsqueeze(0).expand(
-                dists.size(0), dists.size(1)
-            )
-            overlap = torch.nan_to_num(
-                torch.max(
-                    torch.zeros_like(dists), (quantiles_view - dists) / quantiles_view
-                )
-            )
-            id = torch.eye(len(landmarks), device=self.device)
-            cross_entropy_dist = euclidean_dist(overlap, id)
-            loss_val = cross_entropy_dist.min(1)[0].mean(0)
-
-        elif self.loss_metric == "seurat":
-            # Idea of using seurat distances for loss
-            # See https://www.cell.com/cell/pdf/S0092-8674(19)30559-8.pdf
-            assert False, "This loss may not work at current state"
-            dists_t = 1 - (dists.T / dists.max(1)[0]).T
-            prob = 1 - torch.exp(-dists_t / 4)
-            prob = (prob.T / prob.sum(1)).T
-            id = torch.eye(len(landmarks), device=self.device)
-            cross_entropy_dist = euclidean_dist(prob, id)
-            loss_val = cross_entropy_dist.min(1)[0].mean(0)
-
-        elif self.loss_metric == "t":
-            # Idea of using t-distribution as distance metric
-            # See https://www.nature.com/articles/s41467-020-15851-3.pdf as example
-            assert False, "This loss may not work at current state"
-            q = t_dist(latent, landmarks, alpha=1)
-            y_hat = q.argmax(1)
-            args_uniq = torch.unique(y_hat, sorted=True)
-            args_count = torch.stack([(y_hat == x_u).sum() for x_u in args_uniq])
-            p = target_distribution(q)
-            loss_val = kl_loss(q, p)
-
-        else:
-            assert False, (
-                f"'{self.loss_metric}' is not a available as a loss function please choose "
-                f"between 'dist','t' or 'seurat'!"
-            )
+        loss_val = torch.stack(
+            [min_dist[y_hat == idx_class].mean(0) for idx_class in args_uniq]
+        ).mean()
 
         return loss_val, args_count
