@@ -67,14 +67,8 @@ class LATAQtrainer(Trainer):
         finer clusters.
     n_clusters: Integer
         Number of clusters to set for KMeans algorithm.
-    loss_metric: String
-        Type of loss to use for landmarks
     unlabeled_weight: Float
         Weight for loss computed including unlabeled samples
-    overconfidence_scale: Integer
-        Parameter to use in case of hyperbolic loss
-    hyperbolic_log1p: Boolean
-        Whether to use log1p transform in hyperbolic loss
     eta: Float
         Weight for the landmark loss
     seed: Integer
@@ -90,10 +84,7 @@ class LATAQtrainer(Trainer):
         clustering: str = "leiden",
         clustering_res: float = 1,
         n_clusters: int = None,
-        loss_metric: str = "dist",
         unlabeled_weight: float = 0.001,
-        overconfidence_scale: int = None,
-        hyperbolic_log1p: bool = False,
         eta: float = 1,
         **kwargs,
     ):
