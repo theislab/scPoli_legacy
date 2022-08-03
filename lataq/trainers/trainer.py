@@ -1,5 +1,6 @@
 import time
 from collections import defaultdict
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -91,17 +92,6 @@ class LATAQtrainer(Trainer):
 
         super().__init__(model, adata, **kwargs)
 
-        # Only necessary for hyperbolic loss:
-        if overconfidence_scale is None:
-            self.overconfidence_scale = self.model.latent_dim
-        else:
-            self.overconfidence_scale = overconfidence_scale
-        if hyperbolic_log1p:
-            self.log1p_scale = 1
-        else:
-            self.log1p_scale = 0
-
-        self.loss_metric = loss_metric
         self.eta = eta
         self.clustering = clustering
         self.n_clusters = n_clusters

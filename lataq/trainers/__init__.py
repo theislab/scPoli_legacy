@@ -1,1 +1,1 @@
-from .lataq import LATAQtrainer
+from .trainer import LATAQtrainer
